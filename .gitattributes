@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# Exclude development-only paths from the built gem tarball.
+/.github/       export-ignore
+/test/          export-ignore
+/.gitignore     export-ignore
+/.gitattributes export-ignore
+/.editorconfig  export-ignore
+/Gemfile        export-ignore
+/Rakefile       export-ignore
