@@ -1,0 +1,31 @@
+# Math and Diagrams as Images
+
+PDF has no client-side renderer, so math and diagram fences are turned into
+embedded raster images through the `renderers:` callables you supply. Without a
+renderer they degrade gracefully to their monospace source.
+
+## Inline and display math
+
+The mass-energy relation $`E = mc^2` appears inline in a sentence, while the
+Gaussian integral is shown as a centered display equation:
+
+$$`\int_{-\infty}^{\infty} e^{-x^2}\, dx = \sqrt{\pi}`
+
+Another inline example: the quadratic roots $`x = (-b \pm \sqrt{b^2 - 4ac}) / 2a`.
+
+## Diagrams
+
+A flowchart, rendered through the `:mermaid` renderer callable:
+
+```mermaid
+graph TD; Parse --> AST --> Render --> PDF
+```
+
+A dependency graph, rendered through the `:graphviz` callable:
+
+```dot
+digraph { carve_rb -> carve_hexapdf; hexapdf -> carve_hexapdf }
+```
+
+Each callable receives the fence source and returns image bytes (PNG/JPG); the
+engine embeds the result. See `generate.rb` for a runnable renderer.
