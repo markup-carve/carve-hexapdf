@@ -104,6 +104,96 @@ class CarveHexapdfTest < Minitest::Test
     assert_valid_pdf bytes
   end
 
+  # A minimal valid 1x1 transparent PNG.
+  PNG_1PX = [
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489" \
+    "0000000d4944415478da6360000002000001e221bc330000000049454e44ae426082",
+  ].pack("H*")
+
+  def test_all_emphasis_decorations_render
+    src = "Plain, *bold*, /italic/, _underline_, ~~strike~~, ^super^, ,sub,, " \
+          "and ==highlight== together."
+    assert_valid_pdf Carve::Hexapdf.render(src)
+  end
+
+  def test_table_with_col_and_row_spans_renders
+    src = <<~CRV
+      |= A |= B |= C |
+      | 1  | 2  << |
+      | ^  | 4  | 5  |
+    CRV
+    assert_valid_pdf Carve::Hexapdf.render(src)
+  end
+
+  def test_span_counts
+    # Row 1 is [^, d, <]: the `^` in column 0 extends "a" downward, and the `<`
+    # in column 2 extends "d" rightward.
+    rows = Carve.parse("| a | b | c |\n| ^ | d | < |\n")[:children].first[:rows]
+    r = Carve::Hexapdf::Renderer.allocate
+    resolved = r.send(:resolve_spans, rows)
+    # Row 0: a,b,c all 1x1, but "a" gains a row_span from the `^` beneath it.
+    assert_equal [1, 1, 1], resolved[0].map { |o| o[:col_span] }
+    assert_equal 2, resolved[0][0][:row_span]
+    assert_equal [1, 1], resolved[0][1..].map { |o| o[:row_span] }
+    # Row 1: only "d" is a real originator; it absorbs the `<` -> col_span 2.
+    assert_equal 1, resolved[1].size
+    assert_equal 2, resolved[1][0][:col_span]
+    assert_equal 1, resolved[1][0][:row_span]
+  end
+
+  def test_highlight_color_option_accepted
+    # Regression: highlight_color: must be a real, forwarded option.
+    assert_valid_pdf Carve::Hexapdf.render("=hi= there", highlight_color: "ffcc00")
+    assert_valid_pdf Carve::Hexapdf.render_ast(Carve.parse("=hi="), highlight_color: "ffcc00")
+  end
+
+  def test_combined_col_and_row_span_not_overcounted
+    # Row 0 "A" spans both columns (A + `<`); row 1 has a `^` under each covered
+    # column. The downward extension must count once -> row_span 2, not 3.
+    rows = Carve.parse("| A | < |\n| ^ | ^ |\n")[:children].first[:rows]
+    r = Carve::Hexapdf::Renderer.allocate
+    resolved = r.send(:resolve_spans, rows)
+    a = resolved[0][0]
+    assert_equal 2, a[:col_span]
+    assert_equal 2, a[:row_span]
+    assert_empty resolved[1] # both cells in row 1 are markers
+  end
+
+  def test_math_renderer_callable_used
+    called = []
+    math = ->(tex, display) { called << [tex, display]; PNG_1PX }
+    src = "Inline $`x^2`$ and block:\n\n$$`E = mc^2`$$\n"
+    bytes = Carve::Hexapdf.render(src, renderers: { math: math })
+    assert_valid_pdf bytes
+    refute_empty called, "math renderer was never invoked"
+  end
+
+  def test_math_degrades_without_renderer
+    assert_valid_pdf Carve::Hexapdf.render("Inline $`x^2`$ math.")
+  end
+
+  def test_diagram_fence_renderer_used
+    called = false
+    mermaid = ->(_src) { called = true; PNG_1PX }
+    src = "```mermaid\ngraph TD; A-->B\n```\n"
+    assert_valid_pdf Carve::Hexapdf.render(src, renderers: { mermaid: mermaid })
+    assert called, "mermaid renderer was never invoked"
+  end
+
+  def test_bad_renderer_return_degrades_gracefully
+    src = "Inline $`x`$."
+    # Returns a non-String -> must fall back to source, not crash.
+    assert_valid_pdf Carve::Hexapdf.render(src, renderers: { math: ->(*) { 42 } })
+    # Raises -> must be caught.
+    assert_valid_pdf Carve::Hexapdf.render(src, renderers: { math: ->(*) { raise "boom" } })
+  end
+
+  def test_inline_data_uri_image
+    b64 = ["#{[PNG_1PX].pack("m0")}"].first
+    src = "Logo ![logo](data:image/png;base64,#{b64}) inline."
+    assert_valid_pdf Carve::Hexapdf.render(src)
+  end
+
   def test_definition_list_and_blockquote_attribution
     src = <<~CRV
       Term
