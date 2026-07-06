@@ -1,0 +1,30 @@
+# Feature Showcase ![logo](logo.png)
+
+Every inline decoration: *strong*, /emphasis/, _underline_, ~strikethrough~,
+=highlighted= text, and /*bold italic*/. A [link](https://carve.example) with a
+footnote.^[Inline footnote content, rendered as an endnote.]
+
+Standalone superscript ^note^ and subscript ,index, both render as decorations.
+
+## Table with row and column spans
+
+|= Region  |= Q1 |= Q2 |= Q3 |
+| EMEA     | 12  | 15  | 19  |
+| APAC     | 8   | 11  | 22  |
+| ^        | 20  | <   | 25  |
+
+The `^` in the last row extends the "APAC" cell down two rows; the `<` merges
+into the cell on its left.
+
+## Critic markup
+
+The quick {++brown ++}fox {--lazy --}jumps over the dog.
+
+## Admonition
+
+::: note
+This is an admonition block - rendered as a tinted container.
+:::
+
+> Plain text should render beautifully and stay readable at the source.
+^ Design principle
