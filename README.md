@@ -63,26 +63,47 @@ pdf_bytes = Carve::Hexapdf.render_ast(ast)
 | `base_font` | `"Times"` | Proportional font family |
 | `code_font` | `"Courier"` | Monospace font family |
 | `link_color` | `"hp-blue"` | Fill color for links |
+| `highlight_color` | `"fff3a3"` | Background color for `=highlight=` |
+| `renderers` | `nil` | Callables that turn math / diagram source into image bytes (see below) |
 
 ## Supported constructs
 
-Headings, paragraphs, inline strong/emphasis/bold-italic/code/links/autolinks,
-soft & hard breaks, ordered / unordered / task lists (nested), tables (with
-header rows), block quotes (with attribution), fenced code blocks, divs,
-admonitions, definition lists, figures, thematic breaks, and images (embedded
-when the `src` is a local file, otherwise shown as alt text).
+Headings, paragraphs, all inline emphasis (strong / emphasis / bold-italic /
+**underline** / **strikethrough** / **superscript** / **subscript** /
+**highlight**), code, links, autolinks, soft & hard breaks, ordered / unordered
+/ task lists (nested), **tables with header rows and full row / column spans**,
+block quotes (with attribution), fenced code blocks, divs, admonitions,
+definition lists, figures, thematic breaks, critic markup (insert → underline,
+delete → strikethrough), footnote references (superscript), and **images** -
+both block and inline, embedded from a local file path or a `data:` URI.
+
+### Math and diagrams (renderer callables)
+
+PDF has no client-side renderer, so math and diagram fences are turned into
+embedded raster images through callables you supply in `renderers:`. Each
+returns image bytes (PNG/JPG); a missing renderer, or one that returns a
+non-String or raises, degrades that construct to its monospace source.
+
+```ruby
+Carve::Hexapdf.render(source, renderers: {
+  # inline `$`x`$` and display `$$`x`$$` math:
+  math: ->(tex, display) { my_tex_to_png(tex, display) },   # -> String (image bytes) | nil
+  # fenced ```mermaid / ```dot|graphviz / ```chart|vega:
+  mermaid:  ->(src) { my_mermaid_to_png(src) },
+  graphviz: ->(src) { my_dot_to_png(src) },
+  chart:    ->(src) { my_chart_to_png(src) },
+})
+```
 
 ### Graceful degradation
 
-The renderer never raises on an unsupported node - it degrades to the node's
-text or children so a document always produces a PDF:
+The renderer never raises on an unsupported node - it degrades so a document
+always produces a PDF:
 
-- **Math** and **diagram** fences render their source in a monospace run (PDF
-  has no client-side renderer). A future release may accept image-producing
-  renderer callables.
-- **Table cell spans** (`rowspan` / `colspan`) render as individual cells.
-- **Underline / strike / super / sub / highlight** emphasis keeps the text but
-  not the decoration (standard PDF fonts limit what is expressible cheaply).
+- **Math / diagram** fences without a matching `renderers:` callable render
+  their source in a monospace run.
+- **Remote image URLs** (`http(s)://`) are shown as alt text - no network
+  fetching. Local files and `data:` URIs are embedded.
 - **Raw HTML** blocks/inlines and **comments** are dropped.
 
 ## Licensing

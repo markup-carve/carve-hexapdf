@@ -34,6 +34,12 @@ module Carve
       #   base_font::   proportional font family (default "Times").
       #   code_font::   monospace font family (default "Courier").
       #   link_color::  fill color for links (default "hp-blue").
+      #   renderers::   Hash of callables that turn math / diagram source into
+      #                 raster image bytes, so those constructs render as images
+      #                 instead of degrading to source. Keys:
+      #                 +:math+ -> callable(tex, display_bool) -> String|nil;
+      #                 +:mermaid+ / +:graphviz+ / +:chart+ -> callable(source)
+      #                 -> String|nil (PNG/JPG bytes).
       def render(source, **opts)
         render_ast(::Carve.parse(source), **opts)
       end
@@ -41,10 +47,12 @@ module Carve
       # Render an already-parsed Carve AST Hash (see +Carve.parse+) to PDF
       # bytes. Useful when the AST is inspected or transformed before render.
       def render_ast(ast, page_size: :A4, margin: 45, base_font: "Times",
-                     code_font: "Courier", link_color: "hp-blue")
+                     code_font: "Courier", link_color: "hp-blue",
+                     highlight_color: "fff3a3", renderers: nil)
         composer = ::HexaPDF::Composer.new(page_size: page_size, margin: margin)
         Renderer.new(composer, base_font: base_font, code_font: code_font,
-                     link_color: link_color).render_document(ast)
+                     link_color: link_color, highlight_color: highlight_color,
+                     renderers: renderers).render_document(ast)
         composer.write_to_string
       end
 
