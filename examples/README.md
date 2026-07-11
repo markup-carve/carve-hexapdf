@@ -16,9 +16,12 @@ ruby examples/generate.rb
 ## Math and diagrams
 
 PDF has no client-side renderer, so math and diagram fences are turned into
-images by callables you pass in `renderers:`. `generate.rb` supplies an example
-set that draws each construct's source into a small image (via HexaPDF +
-`pdftoppm`, with a pure-Ruby fallback), so the demo is self-contained:
+images by callables you pass in `renderers:`. `generate.rb` uses real renderers
+when the tools are available locally - KaTeX and mermaid.js (from a sibling
+`carve` checkout's `node_modules`, override with `CARVE_NODE_MODULES`) rendered
+through headless Chrome at 2x scale, and the Graphviz `dot` CLI - and falls
+back to drawing each construct's source into a small placeholder image (via
+HexaPDF + `pdftoppm`, with a pure-Ruby fallback), so the script runs anywhere:
 
 ```ruby
 Carve::Hexapdf.render(source, renderers: {

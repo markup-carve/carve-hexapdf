@@ -228,6 +228,41 @@ class CarveHexapdfTest < Minitest::Test
     assert_valid_pdf Carve::Hexapdf.render(src, styles: { "base" => { font_size: 12 } })
   end
 
+  def pdf_text(bytes)
+    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
+    doc.pages.map(&:contents).join.scan(/\((?:[^()\\]|\\.)*\)/).join(" ")
+  end
+
+  def test_footnotes_render_as_numbered_endnotes
+    src = "Text^[An inline note.] and ref[^a] and again[^a].\n\n[^a]: Referenced note body.\n"
+    text = pdf_text(Carve::Hexapdf.render(src))
+    assert_includes text, "([1])"
+    assert_includes text, "(1. An inline note.)"
+    assert_includes text, "(2. Referenced note body.)"
+    # Both references to [^a] share the number 2; only one endnote entry.
+    assert_equal 2, text.scan("([2])").size
+    assert_equal 1, text.scan("(2. Referenced note body.)").size
+  end
+
+  def test_task_list_checkbox_is_drawn_as_marker
+    text = pdf_text(Carve::Hexapdf.render("- [x] done\n- [ ] open\n"))
+    assert_includes text, "([x])"
+    assert_includes text, "([ ])"
+    assert_includes text, "(done)"
+  end
+
+  def test_task_list_markers_stay_correct_across_page_split
+    src = (1..60).map { |n| "- [#{n % 3 == 0 ? 'x' : ' '}] item #{n}" }.join("\n")
+    doc = HexaPDF::Document.new(io: StringIO.new(Carve::Hexapdf.render(src)))
+    assert_operator doc.pages.count, :>, 1
+    doc.pages.each do |page|
+      page.contents.scan(/\((\[[x ]\])\) \(item (\d+)\)/).each do |marker, n|
+        expected = n.to_i % 3 == 0 ? "[x]" : "[ ]"
+        assert_equal expected, marker, "item #{n}"
+      end
+    end
+  end
+
   def test_kitchen_sink_styles_on_every_key_render_without_raising
     src = <<~CRV
       # Head

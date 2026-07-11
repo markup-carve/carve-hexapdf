@@ -122,6 +122,7 @@ win: `base_font:` maps to `base.font`, `code_font:` to `code.font`,
 | `table.header` | `{}` |
 | `table.caption` | `{ font_size: 9, margin: [0, 0, 8] }` |
 | `figure.caption` | `{ font_size: 9, margin: [2, 0, 8], text_align: :center }` |
+| `footnote` | `{ font_size: 9, margin: [0, 0, 3] }` (endnote section entries) |
 | `link` | `{ fill_color: "hp-blue" }` |
 | `highlight` | `{ background_color: "fff3a3" }` |
 | `image` | `{ margin: [2, 0, 8] }` |
@@ -136,20 +137,25 @@ Headings, paragraphs, all inline emphasis (strong / emphasis / bold-italic /
 / task lists (nested), **tables with header rows and full row / column spans**,
 block quotes (with attribution), fenced code blocks, divs, admonitions,
 definition lists, figures, thematic breaks, critic markup (insert → underline,
-delete → strikethrough), footnote references (superscript), and **images** -
-both block and inline, embedded from a local file path or a `data:` URI.
+delete → strikethrough), **footnotes** (superscript `[n]` markers with the
+bodies collected into a numbered endnote section - inline `^[..]` and
+referenced `[^id]` alike), and **images** - both block and inline, embedded
+from a local file path or a `data:` URI. Task-list checkboxes are drawn in the
+list marker column, so item text and nested lists align like any other list.
 
 ### Math and diagrams (renderer callables)
 
 PDF has no client-side renderer, so math and diagram fences are turned into
 embedded raster images through callables you supply in `renderers:`. Each
-returns image bytes (PNG/JPG); a missing renderer, or one that returns a
-non-String or raises, degrades that construct to its monospace source.
+returns image bytes (PNG/JPG) as a String - or a Hash `{ bytes:, width:,
+height: }` (points) to control the drawn size, so high-DPI rasters embed
+crisply at their intended dimensions. A missing renderer, or one that returns
+anything else or raises, degrades that construct to its monospace source.
 
 ```ruby
 Carve::Hexapdf.render(source, renderers: {
   # inline `$`x`$` and display `$$`x`$$` math:
-  math: ->(tex, display) { my_tex_to_png(tex, display) },   # -> String (image bytes) | nil
+  math: ->(tex, display) { my_tex_to_png(tex, display) },   # -> bytes | {bytes:, width:, height:} | nil
   # fenced ```mermaid / ```dot|graphviz / ```chart|vega:
   mermaid:  ->(src) { my_mermaid_to_png(src) },
   graphviz: ->(src) { my_dot_to_png(src) },

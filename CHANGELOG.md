@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `renderers:` callables (`:math`, `:mermaid`, `:graphviz`, `:chart`), degrading
   to monospace source when no renderer is supplied.
 - Images (block and inline) embedded from local file paths or `data:` URIs.
+- Footnotes (inline `^[..]` and referenced `[^id]`) render as superscript
+  `[n]` markers with their bodies collected into a numbered endnote section.
+- Task-list checkboxes are drawn in the list marker column, so item text and
+  nested lists align like any other list.
+- Renderer callables may return `{ bytes:, width:, height: }` to control the
+  drawn size, so high-DPI rasters embed crisply.
 - Hierarchical `styles:` support through `Carve::Hexapdf::StyleMap` for
   restyling headings, code, links, highlights, admonitions, tables, images,
   math fallbacks, and other renderer surfaces; the `base_font:`, `code_font:`,
