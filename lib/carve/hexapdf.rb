@@ -4,6 +4,7 @@ require "hexapdf"
 require "carve"
 
 require_relative "hexapdf/version"
+require_relative "hexapdf/style_map"
 require_relative "hexapdf/renderer"
 
 module Carve
@@ -34,6 +35,7 @@ module Carve
       #   base_font::   proportional font family (default "Times").
       #   code_font::   monospace font family (default "Courier").
       #   link_color::  fill color for links (default "hp-blue").
+      #   styles::      hierarchical style map for PDF output.
       #   renderers::   Hash of callables that turn math / diagram source into
       #                 raster image bytes, so those constructs render as images
       #                 instead of degrading to source. Keys:
@@ -46,13 +48,13 @@ module Carve
 
       # Render an already-parsed Carve AST Hash (see +Carve.parse+) to PDF
       # bytes. Useful when the AST is inspected or transformed before render.
-      def render_ast(ast, page_size: :A4, margin: 45, base_font: "Times",
-                     code_font: "Courier", link_color: "hp-blue",
-                     highlight_color: "fff3a3", renderers: nil)
+      def render_ast(ast, page_size: :A4, margin: 45, base_font: nil,
+                     code_font: nil, link_color: nil,
+                     highlight_color: nil, styles: nil, renderers: nil)
         composer = ::HexaPDF::Composer.new(page_size: page_size, margin: margin)
         Renderer.new(composer, base_font: base_font, code_font: code_font,
                      link_color: link_color, highlight_color: highlight_color,
-                     renderers: renderers).render_document(ast)
+                     styles: styles, renderers: renderers).render_document(ast)
         composer.write_to_string
       end
 

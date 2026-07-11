@@ -3,6 +3,8 @@
 require "stringio"
 require "base64"
 
+require_relative "style_map"
+
 module Carve
   module Hexapdf
     # Walks a Carve AST (as produced by +Carve.parse+) and draws it onto a
@@ -20,7 +22,6 @@ module Carve
     # unknown or unsupported node - it degrades to text/children so a document
     # always renders.
     class Renderer
-      HEADING_SIZE = { 1 => 22, 2 => 18, 3 => 15, 4 => 13, 5 => 12, 6 => 11 }.freeze
       BLOCK_GAP = 8
 
       # Code-fence languages that map to a diagram renderer key.
@@ -38,14 +39,14 @@ module Carve
       #   +:mermaid+/+:graphviz+/+:chart+ -> callable(source_string) -> String|nil.
       #   A nil / non-String return, or a missing key, degrades the construct to
       #   its source.
-      def initialize(composer, base_font: "Times", code_font: "Courier",
-                     link_color: "hp-blue", highlight_color: "fff3a3", renderers: nil)
+      def initialize(composer, base_font: nil, code_font: nil,
+                     link_color: nil, highlight_color: nil, styles: nil, renderers: nil)
         @c = composer
         @layout = composer.document.layout
-        @base = base_font
-        @code_font = code_font
-        @link_color = link_color
-        @highlight_color = highlight_color
+        @styles = StyleMap.new(style_sugar(base_font: base_font, code_font: code_font,
+                                           link_color: link_color,
+                                           highlight_color: highlight_color,
+                                           styles: styles))
         @renderers = renderers || {}
       end
 
@@ -84,12 +85,44 @@ module Carve
 
       private
 
+      def style_sugar(base_font:, code_font:, link_color:, highlight_color:, styles:)
+        sugar = {}
+        sugar["base"] = { font: base_font } unless base_font.nil?
+        sugar["code"] = { font: code_font } unless code_font.nil?
+        sugar["link"] = { fill_color: link_color } unless link_color.nil?
+        sugar["highlight"] = { background_color: highlight_color } unless highlight_color.nil?
+        return sugar if styles.nil?
+        unless styles.respond_to?(:each_pair)
+          raise ArgumentError, "styles must be a Hash-like object"
+        end
+
+        styles.each_pair.with_object(sugar) do |(key, value), out|
+          key = key.to_s
+          out[key] = (out[key] || {}).merge(value)
+        end
+      end
+
+      # The default base font ("Times") matches HexaPDF's own default, so it is
+      # stripped from block styles to keep default output identical to what the
+      # composer would produce anyway; a USER-set font at any chain level
+      # (including base) must survive into the block style.
+      #
+      # :box is a pseudo-property consumed only by sites that draw a surrounding
+      # box (code blocks, quotes, admonitions, ...); everywhere else it would
+      # crash HexaPDF's style handling, so it is stripped unless requested.
+      def style_for(key, inherited_font: false, with_box: false)
+        style = @styles.resolve(key).dup
+        style.delete(:font) unless inherited_font || @styles.user_set_in_chain?(key, :font)
+        style.delete(:box) unless with_box
+        style
+      end
+
       def heading(node, target)
-        size = HEADING_SIZE[node[:level]] || 11
-        runs = inline_runs(node[:children], bold: true)
+        style = style_for("heading.#{node[:level]}")
+        runs = inline_runs(node[:children], bold: true, font_family: style[:font])
         return if runs.empty?
 
-        target.formatted_text(runs, font_size: size, margin: [BLOCK_GAP + 2, 0, BLOCK_GAP - 2])
+        target.formatted_text(runs, **style)
       end
 
       def paragraph(node, target)
@@ -103,10 +136,11 @@ module Carve
       end
 
       def emit_paragraph(children, target, **style)
-        runs = inline_runs(children)
+        merged = style_for("paragraph").merge(style)
+        runs = inline_runs(children, font_family: merged[:font])
         return if runs.empty?
 
-        target.formatted_text(runs, **{ margin: [0, 0, BLOCK_GAP] }.merge(style))
+        target.formatted_text(runs, **merged)
       end
 
       def code_block(node, target)
@@ -116,11 +150,16 @@ module Carve
         end
 
         content = node[:content].to_s.chomp
-        target.text(content, font: @code_font, font_size: 9, margin: [2, 0, BLOCK_GAP],
-                    box_style: { background_color: "f2f2f2", padding: 6 })
+        style = style_for("code.block", inherited_font: true, with_box: true)
+        box = style.delete(:box)
+        target.text(content, **style, box_style: box)
       end
 
       def list(node, target)
+        # The list box is structural: item text styling flows through the
+        # paragraph chain, and Composer#list rejects text keywords (:font,
+        # :font_size, ...) that the chain inherits from base - whitelist.
+        style = style_for("list").slice(:item_spacing, :content_indentation)
         items = Array(node[:items])
         ordered = node[:ordered]
         task = items.any? { |it| !it[:checked].nil? }
@@ -132,9 +171,9 @@ module Carve
                    :disc
                  end
         start = node[:start] || 1
+        style[:content_indentation] = 4 if task && !@styles.user_set?("list", :content_indentation)
 
-        target.list(marker_type: marker, start_number: start, item_spacing: 3,
-                    content_indentation: task ? 4 : 18) do |list_box|
+        target.list(**style, marker_type: marker, start_number: start) do |list_box|
           items.each do |item|
             list_box.container do |cell|
               prefix = task ? (item[:checked] ? "[x] " : "[ ] ") : nil
@@ -146,22 +185,22 @@ module Carve
 
       def render_item(item, cell, prefix)
         children = Array(item[:children])
+        para_style = style_for("paragraph").merge(margin: [0, 0, 2])
         first_para_done = false
         children.each do |ch|
           if prefix && !first_para_done && ch[:type] == "paragraph"
-            runs = [{ text: prefix }] + inline_runs(ch[:children])
-            cell.formatted_text(runs, margin: [0, 0, 2])
+            runs = [{ text: prefix }] + inline_runs(ch[:children], font_family: para_style[:font])
+            cell.formatted_text(runs, **para_style)
             first_para_done = true
           else
             block(ch, cell)
           end
         end
-        cell.formatted_text([{ text: prefix }]) if prefix && !first_para_done
+        cell.formatted_text([{ text: prefix }], **para_style.except(:margin)) if prefix && !first_para_done
       end
 
       def block_quote(node, target)
-        target.container(style: { margin: [2, 0, BLOCK_GAP], padding: [4, 10],
-                                  background_color: "f7f7f7" }) do |cont|
+        target.container(style: style_for("quote", with_box: true)[:box]) do |cont|
           Array(node[:children]).each { |ch| block(ch, cont) }
           if node[:attribution]
             emit_paragraph(node[:attribution], cont, margin: [2, 0, 0])
@@ -176,22 +215,26 @@ module Carve
       end
 
       def admonition(node, target)
-        target.container(style: { margin: [2, 0, BLOCK_GAP], padding: [6, 10],
-                                  background_color: "eef3fb" }) do |cont|
+        kind = node[:kind].to_s
+        key = kind.empty? || kind.include?(".") ? "admonition" : "admonition.#{kind}"
+        style = style_for(key, with_box: true)
+        target.container(style: style[:box]) do |cont|
           title = node[:title] && !node[:title].empty? ? node[:title] : [{ type: "text", value: node[:kind].to_s.capitalize }]
-          cont.formatted_text(inline_runs(title, bold: true), margin: [0, 0, 4])
+          cont.formatted_text(inline_runs(title, bold: true, font_family: style[:font]),
+                              margin: style[:title_margin])
           Array(node[:children]).each { |ch| block(ch, cont) }
         end
       end
 
       def definition_list(node, target)
-        target.container(style: { margin: [0, 0, BLOCK_GAP] }) do |cont|
+        style = style_for("definition_list", with_box: true)
+        target.container(style: style[:box]) do |cont|
           Array(node[:items]).each do |item|
             Array(item[:terms]).each do |term|
               cont.formatted_text(inline_runs(term, bold: true), margin: [2, 0, 1])
             end
             Array(item[:definitions]).each do |defn|
-              cont.container(style: { padding: [0, 0, 0, 16] }) do |dcont|
+              cont.container(style: { padding: [0, 0, 0, style[:definition_indent]] }) do |dcont|
                 Array(defn).each { |ch| block(ch, dcont) }
               end
             end
@@ -202,19 +245,20 @@ module Carve
       def figure(node, target)
         block(node[:target], target) if node[:target]
         if node[:caption] && !node[:caption].empty?
-          target.formatted_text(inline_runs(node[:caption], italic: true),
-                                text_align: :center, font_size: 9, margin: [2, 0, BLOCK_GAP])
+          style = style_for("figure.caption")
+          target.formatted_text(inline_runs(node[:caption], italic: true, font_family: style[:font]),
+                                **style)
         end
       end
 
       def image_block(node, target)
         io = resolve_image(node[:src].to_s)
         if io
-          target.image(io, margin: [2, 0, BLOCK_GAP])
+          target.image(io, **style_for("image"))
         else
           alt = node[:alt].to_s
           alt = "[image: #{node[:src]}]" if alt.empty?
-          target.formatted_text([{ text: alt, font: [@base, { variant: :italic }] }],
+          target.formatted_text([{ text: alt, font: [base_font, { variant: :italic }] }],
                                 margin: [0, 0, BLOCK_GAP])
         end
       end
@@ -224,18 +268,21 @@ module Carve
           return image_bytes(bytes, target, align: :center)
         end
 
-        target.text(node[:content].to_s, font: @code_font, font_size: 11, text_align: :center,
-                    margin: [4, 0, BLOCK_GAP], box_style: { padding: 4 })
+        style = style_for("math", with_box: true)
+        box = style.delete(:box)
+        style[:font] ||= code_font
+        target.text(node[:content].to_s, **style, text_align: :center, box_style: box)
       end
 
       def thematic_break(target)
-        target.box(:base, height: 2,
-                   style: { margin: [BLOCK_GAP, 0, BLOCK_GAP], background_color: "cccccc" })
+        style = style_for("thematic_break")
+        height = style.delete(:height)
+        target.box(:base, height: height, style: style)
       end
 
       # Draw raster image bytes as a block image.
       def image_bytes(bytes, target, align: nil)
-        style = { margin: [2, 0, BLOCK_GAP] }
+        style = style_for("image")
         style[:align] = align if align
         target.image(StringIO.new(bytes), style: style)
       rescue StandardError
@@ -250,12 +297,19 @@ module Carve
         return if resolved.empty?
 
         header_count = resolved.first.any? { |o| o[:header] } ? 1 : 0
+        table_style = style_for("table")
+        header_style = style_for("table.header")
 
         cell_boxes = resolved.map do |row|
           row.map do |o|
-            runs = inline_runs(o[:cell][:children], bold: o[:header])
+            cell_style = o[:header] ? table_style.merge(header_style) : table_style
+            runs = inline_runs(o[:cell][:children], bold: o[:header],
+                               font_family: cell_style[:font])
             runs = [{ text: "" }] if runs.empty?
-            box = @layout.formatted_text_box(runs, font_size: 10, padding: 4)
+            # :margin belongs to the table box, :cell_padding is our pseudo-prop.
+            box_opts = cell_style.except(:margin, :cell_padding, :box)
+            box_opts[:padding] = cell_style[:cell_padding]
+            box = @layout.formatted_text_box(runs, **box_opts)
             hash = { content: box }
             hash[:col_span] = o[:col_span] if o[:col_span] > 1
             hash[:row_span] = o[:row_span] if o[:row_span] > 1
@@ -267,10 +321,11 @@ module Carve
         body = header_count.positive? ? cell_boxes[1..] : cell_boxes
         body = [[{ content: @layout.text_box("") }]] if body.nil? || body.empty?
 
-        target.table(body, header: header, margin: [2, 0, BLOCK_GAP])
+        target.table(body, header: header, margin: table_style[:margin])
         if node[:caption] && !node[:caption].empty?
-          target.formatted_text(inline_runs(node[:caption], italic: true),
-                                font_size: 9, margin: [0, 0, BLOCK_GAP])
+          style = style_for("table.caption")
+          target.formatted_text(inline_runs(node[:caption], italic: true, font_family: style[:font]),
+                                **style)
         end
       end
 
@@ -381,7 +436,10 @@ module Carve
       def run(text, ctx)
         item = { text: text }
         if ctx[:code]
-          item[:font] = @code_font
+          # :box is a block-level pseudo-property (e.g. inherited from a user
+          # "code" entry meant for code.block); HexaPDF would read a run :box
+          # as an inline box spec and crash.
+          item.merge!(@styles.resolve("code.inline").except(:box))
         elsif ctx[:bold] || ctx[:italic]
           variant = if ctx[:bold] && ctx[:italic]
                       :bold_italic
@@ -390,18 +448,37 @@ module Carve
                     else
                       :italic
                     end
-          item[:font] = [@base, { variant: variant }]
+          item[:font] = [ctx[:font_family] || base_font, { variant: variant }]
         end
         item[:underline] = true if ctx[:underline]
         item[:strikeout] = true if ctx[:strike]
         item[:superscript] = true if ctx[:super]
         item[:subscript] = true if ctx[:sub]
-        item[:background_color] = @highlight_color if ctx[:highlight]
+        item.merge!(run_style("highlight")) if ctx[:highlight]
         if ctx[:link] && !ctx[:link].empty?
           item[:link] = ctx[:link]
-          item[:fill_color] = @link_color
+          item.merge!(run_style("link"))
         end
         item
+      end
+
+      # Link/highlight styles are decoration overlays on a run that may already
+      # carry a variant or code font; the font they inherit from +base+ must not
+      # clobber it (only a font set explicitly on the key itself wins), and a
+      # block-level :box pseudo-property must never reach a run.
+      def run_style(key)
+        style = @styles.resolve(key).except(:box)
+        return style if @styles.user_set?(key, :font)
+
+        style.except(:font)
+      end
+
+      def base_font
+        @styles.resolve("base")[:font]
+      end
+
+      def code_font
+        @styles.resolve("code.inline")[:font]
       end
 
       def inline_math(node, ctx, out)

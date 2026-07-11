@@ -64,7 +64,69 @@ pdf_bytes = Carve::Hexapdf.render_ast(ast)
 | `code_font` | `"Courier"` | Monospace font family |
 | `link_color` | `"hp-blue"` | Fill color for links |
 | `highlight_color` | `"fff3a3"` | Background color for `=highlight=` |
+| `styles` | `nil` | Hierarchical style overrides (see below) |
 | `renderers` | `nil` | Callables that turn math / diagram source into image bytes (see below) |
+
+## Styling
+
+Pass `styles:` to restyle renderer output without patching the renderer. Keys are
+hierarchical dotted names; more specific entries win before parent entries, and
+user values win over defaults at the same key.
+
+```ruby
+Carve::Hexapdf.render(source, styles: {
+  "heading" => { fill_color: "333333" },
+  "code.block" => { box: { background_color: "fff8dd", padding: 8 } },
+  "admonition.warning" => { box: { background_color: "fff0f0" } },
+})
+```
+
+Resolution examples:
+
+- `heading.1` resolves through `heading` and then `base`.
+- `code.inline` resolves through `code` and then `base`.
+- `admonition.warning` resolves through `admonition` and then `base`.
+- `box:` hashes deep-merge; other values, including margin arrays, replace as a
+  whole.
+- `box:` only takes effect on keys that draw a surrounding box (`code.block`,
+  `quote`, `admonition`, `definition_list`, `math`); on text-only keys it is
+  ignored.
+- `list` accepts only its structural properties (`item_spacing`,
+  `content_indentation`); item text styling flows through `paragraph`.
+
+Specificity comes first: `"heading" => { font_size: 30 }` does not override the
+default `heading.1` size of `22`, but `"heading" => { fill_color: "333333" }`
+does apply to all heading levels. To change all heading sizes, set
+`heading.1` through `heading.6` individually.
+
+Existing keyword options are sugar under `styles:` and explicit style entries
+win: `base_font:` maps to `base.font`, `code_font:` to `code.font`,
+`link_color:` to `link.fill_color`, and `highlight_color:` to
+`highlight.background_color`.
+
+| Key | Defaults |
+| --- | -------- |
+| `base` | `{ font: "Times" }` |
+| `heading` | `{ margin: [10, 0, 6] }` |
+| `heading.1` ... `heading.6` | `{ font_size: 22 }`, `{ font_size: 18 }`, `{ font_size: 15 }`, `{ font_size: 13 }`, `{ font_size: 12 }`, `{ font_size: 11 }` |
+| `paragraph` | `{ margin: [0, 0, 8] }` |
+| `code` | `{ font: "Courier" }` |
+| `code.block` | `{ font_size: 9, margin: [2, 0, 8], box: { background_color: "f2f2f2", padding: 6 } }` |
+| `code.inline` | `{}` |
+| `quote` | `{ box: { margin: [2, 0, 8], padding: [4, 10], background_color: "f7f7f7" } }` |
+| `admonition` | `{ box: { margin: [2, 0, 8], padding: [6, 10], background_color: "eef3fb" }, title_margin: [0, 0, 4] }` |
+| `admonition.<kind>` | No defaults; any kind the parser accepts works (including hyphenated ones) |
+| `list` | `{ item_spacing: 3, content_indentation: 18 }` |
+| `definition_list` | `{ box: { margin: [0, 0, 8] }, definition_indent: 16 }` |
+| `table` | `{ font_size: 10, cell_padding: 4, margin: [2, 0, 8] }` |
+| `table.header` | `{}` |
+| `table.caption` | `{ font_size: 9, margin: [0, 0, 8] }` |
+| `figure.caption` | `{ font_size: 9, margin: [2, 0, 8], text_align: :center }` |
+| `link` | `{ fill_color: "hp-blue" }` |
+| `highlight` | `{ background_color: "fff3a3" }` |
+| `image` | `{ margin: [2, 0, 8] }` |
+| `math` | `{ font_size: 11, margin: [4, 0, 8], box: { padding: 4 } }` |
+| `thematic_break` | `{ height: 2, margin: [8, 0, 8], background_color: "cccccc" }` |
 
 ## Supported constructs
 

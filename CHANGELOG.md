@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-07-06
+## [0.1.0] - 2026-07-11
 
 ### Added
 
@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `renderers:` callables (`:math`, `:mermaid`, `:graphviz`, `:chart`), degrading
   to monospace source when no renderer is supplied.
 - Images (block and inline) embedded from local file paths or `data:` URIs.
+- Hierarchical `styles:` support through `Carve::Hexapdf::StyleMap` for
+  restyling headings, code, links, highlights, admonitions, tables, images,
+  math fallbacks, and other renderer surfaces; the `base_font:`, `code_font:`,
+  `link_color:`, and `highlight_color:` keyword options are convenience sugar
+  under the style map.
 - Graceful degradation: unknown nodes fall back to text/children, remote image
   URLs show alt text, raw HTML and comments are dropped; the renderer never
   raises.
