@@ -34,10 +34,10 @@ The parser runs in *two passes*:
 
 ## Notes
 
-Term
+:: Term
 :  A single unit of markup meaning.
 
-AST
+:: AST
 :  The parsed tree returned by `Carve.parse`.
 
 ```rust

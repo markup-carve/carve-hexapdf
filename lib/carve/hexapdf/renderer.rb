@@ -35,10 +35,12 @@ module Carve
 
       # @param renderers [Hash] optional callables that turn a construct's
       #   source into raster image bytes (PNG/JPG). Keys:
-      #   +:math+ -> callable(tex_string, display_bool) -> String|nil;
-      #   +:mermaid+/+:graphviz+/+:chart+ -> callable(source_string) -> String|nil.
-      #   A nil / non-String return, or a missing key, degrades the construct to
-      #   its source.
+      #   +:math+ -> callable(tex_string, display_bool);
+      #   +:mermaid+/+:graphviz+/+:chart+ -> callable(source_string).
+      #   Each callable returns the image bytes as a String, or a Hash with
+      #   +:bytes+ and optional +:width+/+:height+ (points) to control the
+      #   drawn size of high-DPI rasters. Any other return, or a missing key,
+      #   degrades the construct to its source.
       def initialize(composer, base_font: nil, code_font: nil,
                      link_color: nil, highlight_color: nil, styles: nil, renderers: nil)
         @c = composer
@@ -51,7 +53,12 @@ module Carve
       end
 
       def render_document(doc)
+        # Keys arrive as Symbols (symbolized JSON) while node :id is a String.
+        @footnote_defs = (doc[:footnote_defs] || {}).transform_keys(&:to_s)
+        @footnotes = []
+        @footnote_numbers = {}
         Array(doc[:children]).each { |node| block(node, @c) }
+        render_footnotes(@c)
         @c
       end
 
@@ -163,40 +170,34 @@ module Carve
         items = Array(node[:items])
         ordered = node[:ordered]
         task = items.any? { |it| !it[:checked].nil? }
+        start = node[:start] || 1
         marker = if task
-                   ->(doc, _list, _index) { doc.layout.text_box("") }
+                   # Standard PDF fonts have no checkbox glyphs; draw an ASCII
+                   # checkbox in the marker column so item text (and nested
+                   # lists) align like any other list.
+                   checked = items.map { |it| it[:checked] }
+                   font = style_for("paragraph", inherited_font: true)[:font] || "Times"
+                   ->(doc, list_box, index) do
+                     # A list split across pages continues in a box whose
+                     # start_number is advanced by the items already drawn;
+                     # index alone is relative to that split remainder.
+                     absolute = list_box.start_number - start + index
+                     doc.layout.text_box(checked[absolute] ? "[x]" : "[ ]",
+                                         font: font, font_size: 10)
+                   end
                  elsif ordered
                    :decimal
                  else
                    :disc
                  end
-        start = node[:start] || 1
-        style[:content_indentation] = 4 if task && !@styles.user_set?("list", :content_indentation)
 
         target.list(**style, marker_type: marker, start_number: start) do |list_box|
           items.each do |item|
             list_box.container do |cell|
-              prefix = task ? (item[:checked] ? "[x] " : "[ ] ") : nil
-              render_item(item, cell, prefix)
+              Array(item[:children]).each { |ch| block(ch, cell) }
             end
           end
         end
-      end
-
-      def render_item(item, cell, prefix)
-        children = Array(item[:children])
-        para_style = style_for("paragraph").merge(margin: [0, 0, 2])
-        first_para_done = false
-        children.each do |ch|
-          if prefix && !first_para_done && ch[:type] == "paragraph"
-            runs = [{ text: prefix }] + inline_runs(ch[:children], font_family: para_style[:font])
-            cell.formatted_text(runs, **para_style)
-            first_para_done = true
-          else
-            block(ch, cell)
-          end
-        end
-        cell.formatted_text([{ text: prefix }], **para_style.except(:margin)) if prefix && !first_para_done
       end
 
       def block_quote(node, target)
@@ -280,11 +281,17 @@ module Carve
         target.box(:base, height: height, style: style)
       end
 
-      # Draw raster image bytes as a block image.
-      def image_bytes(bytes, target, align: nil)
+      # Draw a rendered image ({bytes:, width:, height:} or raw bytes) as a
+      # block image. :width/:height are box constructor arguments in HexaPDF,
+      # not style properties.
+      def image_bytes(img, target, align: nil)
+        img = { bytes: img } if img.is_a?(String)
         style = style_for("image")
         style[:align] = align if align
-        target.image(StringIO.new(bytes), style: style)
+        opts = { style: style }
+        opts[:width] = img[:width] if img[:width]
+        opts[:height] = img[:height] if img[:height]
+        target.image(StringIO.new(img[:bytes]), **opts)
       rescue StandardError
         # A malformed image must not abort the whole document.
         nil
@@ -399,7 +406,8 @@ module Carve
         when "mention"  then out << run("@#{node[:user]}", ctx)
         when "tag"      then out << run("##{node[:name]}", ctx)
         when "footnote"
-          out << run("[#{node[:number]}]", ctx.merge(super: true)) if node[:number]
+          number = register_footnote(node)
+          out << run("[#{number}]", ctx.merge(super: true)) if number
         when "citation_group" then out << run(node[:raw].to_s, ctx)
         when "abbreviation"   then out << run(node[:abbr].to_s, ctx)
         when "cross_ref"      then out << run(node[:target].to_s, ctx)
@@ -473,6 +481,55 @@ module Carve
         style.except(:font)
       end
 
+      # Register a footnote occurrence and return its sequential number, or nil
+      # when there is nothing to number (unresolvable reference). Repeated
+      # references to the same definition share one number and one endnote.
+      def register_footnote(node)
+        if node[:inline]
+          @footnotes << { number: @footnotes.size + 1, inline: node[:inline] }
+          return @footnotes.last[:number]
+        end
+
+        id = node[:id]
+        if id && @footnote_defs.key?(id)
+          return @footnote_numbers[id] ||= begin
+            @footnotes << { number: @footnotes.size + 1, blocks: @footnote_defs[id] }
+            @footnotes.last[:number]
+          end
+        end
+
+        node[:number]
+      end
+
+      # Emit collected footnotes as a numbered endnote section under a short
+      # separator rule, mirroring how the HTML renderer relocates footnotes.
+      def render_footnotes(target)
+        return if @footnotes.empty?
+
+        style = style_for("footnote")
+        target.box(:base, height: 1,
+                   style: { margin: [14, 380, 6, 0], background_color: "bbbbbb" })
+        @footnotes.each do |fn|
+          if fn[:inline]
+            runs = [{ text: "#{fn[:number]}. " }] +
+                   inline_runs(fn[:inline], font_family: style[:font])
+            target.formatted_text(runs, **style)
+          else
+            first_para = true
+            Array(fn[:blocks]).each do |blk|
+              if first_para && blk[:type] == "paragraph"
+                runs = [{ text: "#{fn[:number]}. " }] +
+                       inline_runs(blk[:children], font_family: style[:font])
+                target.formatted_text(runs, **style)
+              else
+                block(blk, target)
+              end
+              first_para = false
+            end
+          end
+        end
+      end
+
       def base_font
         @styles.resolve("base")[:font]
       end
@@ -482,8 +539,11 @@ module Carve
       end
 
       def inline_math(node, ctx, out)
-        if (bytes = call_renderer(:math, node[:content].to_s, !!node[:display]))
-          out << { box: [:image, StringIO.new(bytes)], height: 11, valign: :baseline }
+        if (img = call_renderer(:math, node[:content].to_s, !!node[:display]))
+          spec = { box: [:image, StringIO.new(img[:bytes])],
+                   height: img[:height] || 11, valign: :baseline }
+          spec[:width] = img[:width] if img[:width]
+          out << spec
         else
           out << run(node[:content].to_s, ctx.merge(code: true))
         end
@@ -521,13 +581,19 @@ module Carve
         nil
       end
 
-      # Invoke a renderer callable; return its String image bytes or nil.
+      # Invoke a renderer callable; returns {bytes:, width:, height:} or nil.
+      # Callables may return raw image bytes (String) or a Hash with :bytes
+      # plus optional :width / :height (in points) controlling the drawn size,
+      # so high-DPI rasters can embed at their intended dimensions.
       def call_renderer(key, *args)
         callable = @renderers[key] || @renderers[key.to_s]
         return nil unless callable
 
         result = callable.call(*args)
-        result.is_a?(String) ? result : nil
+        result = { bytes: result } if result.is_a?(String)
+        return nil unless result.is_a?(Hash) && result[:bytes].is_a?(String)
+
+        result
       rescue StandardError
         nil
       end

@@ -45,6 +45,7 @@ module Carve
         "table.header" => {},
         "table.caption" => { font_size: 9, margin: [0, 0, 8] },
         "figure.caption" => { font_size: 9, margin: [2, 0, 8], text_align: :center },
+        "footnote" => { font_size: 9, margin: [0, 0, 3] },
         "link" => { fill_color: "hp-blue" },
         "highlight" => { background_color: "fff3a3" },
         "image" => { margin: [2, 0, 8] },

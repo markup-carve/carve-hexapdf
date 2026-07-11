@@ -37,11 +37,14 @@ module Carve
       #   link_color::  fill color for links (default "hp-blue").
       #   styles::      hierarchical style map for PDF output.
       #   renderers::   Hash of callables that turn math / diagram source into
-      #                 raster image bytes, so those constructs render as images
+      #                 raster images, so those constructs render as images
       #                 instead of degrading to source. Keys:
-      #                 +:math+ -> callable(tex, display_bool) -> String|nil;
-      #                 +:mermaid+ / +:graphviz+ / +:chart+ -> callable(source)
-      #                 -> String|nil (PNG/JPG bytes).
+      #                 +:math+ -> callable(tex, display_bool);
+      #                 +:mermaid+ / +:graphviz+ / +:chart+ -> callable(source).
+      #                 Return PNG/JPG bytes as a String, or a Hash with
+      #                 +:bytes+ and optional +:width+/+:height+ (points) to
+      #                 control the drawn size; anything else degrades the
+      #                 construct to its monospace source.
       def render(source, **opts)
         render_ast(::Carve.parse(source), **opts)
       end

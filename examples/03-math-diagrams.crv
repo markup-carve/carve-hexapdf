@@ -18,7 +18,7 @@ Another inline example: the quadratic roots $`x = (-b \pm \sqrt{b^2 - 4ac}) / 2a
 A flowchart, rendered through the `:mermaid` renderer callable:
 
 ```mermaid
-graph TD; Parse --> AST --> Render --> PDF
+graph LR; Parse --> AST --> Render --> PDF
 ```
 
 A dependency graph, rendered through the `:graphviz` callable:

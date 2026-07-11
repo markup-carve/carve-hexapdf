@@ -18,7 +18,7 @@ into the cell on its left.
 
 ## Critic markup
 
-The quick {++brown ++}fox {--lazy --}jumps over the dog.
+The quick {+brown+} fox {-lazy-} jumps over the {~dog~>log~}.
 
 ## Admonition
 
