@@ -16,6 +16,11 @@ class CarveHexapdfTest < Minitest::Test
     doc.pages.count
   end
 
+  def pdf_content(bytes)
+    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
+    doc.pages.map(&:contents).join("\n")
+  end
+
   def test_render_returns_pdf_bytes
     assert_valid_pdf Carve::Hexapdf.render("# Hello *world*")
   end
@@ -145,6 +150,196 @@ class CarveHexapdfTest < Minitest::Test
     # Regression: highlight_color: must be a real, forwarded option.
     assert_valid_pdf Carve::Hexapdf.render("=hi= there", highlight_color: "ffcc00")
     assert_valid_pdf Carve::Hexapdf.render_ast(Carve.parse("=hi="), highlight_color: "ffcc00")
+  end
+
+  def test_style_kwargs_are_sugar_and_explicit_styles_win
+    bytes = Carve::Hexapdf.render("[link](https://example.com)",
+                                  link_color: "00ff00",
+                                  styles: { "link" => { fill_color: "ff0000" } })
+    assert_valid_pdf bytes
+    content = pdf_content(bytes)
+    assert_includes content, "1.0 0.0 0.0 rg"
+    refute_includes content, "0.0 1.0 0.0 rg"
+  end
+
+  def test_heading_and_code_block_styles_are_observable
+    src = <<~CRV
+      # Styled
+
+      ```
+      code
+      ```
+    CRV
+    bytes = Carve::Hexapdf.render(src, styles: {
+      "heading" => { fill_color: "ff0000" },
+      "code.block" => { box: { background_color: "00ff00" } },
+    })
+    assert_valid_pdf bytes
+    content = pdf_content(bytes)
+    assert_includes content, "1.0 0.0 0.0 rg"
+    assert_includes content, "0.0 1.0 0.0 rg"
+  end
+
+  def test_admonition_kind_style_is_specific
+    src = <<~CRV
+      ::: warning
+      Be careful.
+      :::
+
+      ::: note
+      Remember this.
+      :::
+    CRV
+    bytes = Carve::Hexapdf.render(src, styles: {
+      "admonition.warning" => { box: { background_color: "ff0000" } },
+      "admonition.note" => { box: { background_color: "00ff00" } },
+    })
+    assert_valid_pdf bytes
+    content = pdf_content(bytes)
+    assert_includes content, "1.0 0.0 0.0 rg"
+    assert_includes content, "0.0 1.0 0.0 rg"
+  end
+
+  def test_base_font_renders_all_constructs
+    src = <<~CRV
+      # Head
+
+      Para with *bold*, `code`, [link](https://example.com), =mark=.
+
+      - item
+      - [x] task
+
+      > quote
+
+      ::: note
+      body
+      :::
+
+      :: term
+      :  def
+
+      |= h |
+      | b |
+
+      ---
+    CRV
+    assert_valid_pdf Carve::Hexapdf.render(src, styles: { "base" => { font: "Helvetica" } })
+    assert_valid_pdf Carve::Hexapdf.render(src, base_font: "Helvetica")
+    assert_valid_pdf Carve::Hexapdf.render(src, styles: { "base" => { font_size: 12 } })
+  end
+
+  def test_kitchen_sink_styles_on_every_key_render_without_raising
+    src = <<~CRV
+      # Head
+
+      Para with *bold*, `code`, [link](https://example.com), =mark=, $`x^2`.
+
+      - item
+      - [x] task
+
+      > quote
+
+      ::: warning
+      body
+      :::
+
+      :: term
+      :  def
+
+      |= h1 |= h2 |
+      | a | b |
+
+      ![alt](missing.png)
+
+      ---
+    CRV
+    keys = %w[
+      base heading heading.1 paragraph code code.block code.inline quote
+      admonition admonition.warning list definition_list table table.header
+      table.caption figure.caption link highlight image math thematic_break
+    ]
+    sink = { font: "Helvetica", font_size: 13, fill_color: "112233",
+             box: { background_color: "445566", padding: 3 } }
+    styles = keys.to_h { |k| [k, sink] }
+    assert_valid_pdf Carve::Hexapdf.render(src, styles: styles)
+  end
+
+  def test_block_box_styles_do_not_leak_into_inline_runs
+    assert_valid_pdf Carve::Hexapdf.render(
+      "`code` and =mark= and [l](https://example.com)\n",
+      styles: {
+        "code" => { box: { background_color: "ff0000" } },
+        "highlight" => { box: { padding: 2 } },
+        "link" => { box: { padding: 2 } },
+      },
+    )
+  end
+
+  def test_task_list_text_gets_paragraph_styles
+    bytes = Carve::Hexapdf.render("- [x] task text\n",
+                                  styles: { "paragraph" => { fill_color: "ff0000" } })
+    assert_valid_pdf bytes
+    assert_includes pdf_content(bytes), "1.0 0.0 0.0 rg"
+  end
+
+  def test_task_list_text_uses_base_font
+    bytes = Carve::Hexapdf.render("- [x] task text\n", styles: { "base" => { font: "Helvetica" } })
+    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
+    fonts = doc.pages.flat_map do |page|
+      page.resources[:Font].value.values.map { |ref| doc.deref(ref)[:BaseFont].to_s }
+    end
+    assert_includes fonts, "Helvetica"
+    refute_includes fonts, "Times-Roman"
+  end
+
+  def test_bold_link_keeps_variant_with_custom_base_font
+    bytes = Carve::Hexapdf.render("*[link](https://example.com)*",
+                                  styles: { "base" => { font: "Helvetica" } })
+    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
+    fonts = doc.pages.flat_map do |page|
+      page.resources[:Font].value.values.map { |ref| doc.deref(ref)[:BaseFont].to_s }
+    end
+    assert_includes fonts, "Helvetica-Bold"
+  end
+
+  def test_base_font_applies_to_plain_text
+    bytes = Carve::Hexapdf.render("Just plain text.", styles: { "base" => { font: "Helvetica" } })
+    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
+    fonts = doc.pages.flat_map do |page|
+      page.resources[:Font].value.values.map { |ref| doc.deref(ref)[:BaseFont].to_s }
+    end
+    assert_includes fonts, "Helvetica"
+    refute_includes fonts, "Times-Roman"
+  end
+
+  def test_table_header_text_styles_are_applied
+    bytes = Carve::Hexapdf.render("|= H |\n| body |\n", styles: {
+      "table.header" => { fill_color: "ff0000" },
+    })
+    assert_valid_pdf bytes
+    assert_includes pdf_content(bytes), "1.0 0.0 0.0 rg"
+  end
+
+  def test_heading_font_style_reaches_bold_runs
+    bytes = Carve::Hexapdf.render("# Hello", styles: { "heading" => { font: "Helvetica" } })
+    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
+    fonts = doc.pages.flat_map do |page|
+      page.resources[:Font].value.values.map { |ref| doc.deref(ref)[:BaseFont].to_s }
+    end
+    assert_includes fonts, "Helvetica-Bold"
+    refute_includes fonts, "Times-Bold"
+  end
+
+  def test_hyphenated_admonition_kind_renders_without_raising
+    src = <<~CRV
+      ::: my-note
+      Free-form kind.
+      :::
+    CRV
+    assert_valid_pdf Carve::Hexapdf.render(src)
+    assert_valid_pdf Carve::Hexapdf.render(
+      src, styles: { "admonition.my-note" => { box: { background_color: "ff0000" } } },
+    )
   end
 
   def test_combined_col_and_row_span_not_overcounted
