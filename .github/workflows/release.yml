@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Allows publishing a version whose tag was pushed before this workflow
+  # existed (run it with the tag selected as the ref).
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Build and publish to RubyGems
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+
+      - name: Build gem
+        run: gem build carve-hexapdf.gemspec
+
+      - name: Configure RubyGems credentials
+        run: |
+          mkdir -p ~/.gem
+          printf -- '---\n:rubygems_api_key: %s\n' "${{ secrets.RUBYGEMS_API_KEY }}" > ~/.gem/credentials
+          chmod 0600 ~/.gem/credentials
+
+      - name: Push gem to RubyGems
+        run: gem push carve-hexapdf-*.gem
