@@ -31,7 +31,7 @@ class CarveHexapdfTest < Minitest::Test
 
   def test_inline_styles_do_not_raise
     src = "A *bold*, /italic/, _*both*_, `code`, [link](https://x.io), " \
-          "~~strike~~, ^sup^ and ,sub, run."
+          "~~strike~~, {^sup^} and {,sub,} run."
     assert_valid_pdf Carve::Hexapdf.render(src)
   end
 
@@ -116,7 +116,7 @@ class CarveHexapdfTest < Minitest::Test
   ].pack("H*")
 
   def test_all_emphasis_decorations_render
-    src = "Plain, *bold*, /italic/, _underline_, ~~strike~~, ^super^, ,sub,, " \
+    src = "Plain, *bold*, /italic/, _underline_, ~~strike~~, {^super^}, {,sub,}, " \
           "and ==highlight== together."
     assert_valid_pdf Carve::Hexapdf.render(src)
   end

@@ -4,7 +4,7 @@ Every inline decoration: *strong*, /emphasis/, _underline_, ~strikethrough~,
 =highlighted= text, and /*bold italic*/. A [link](https://carve.example) with a
 footnote.^[Inline footnote content, rendered as an endnote.]
 
-Standalone superscript ^note^ and subscript ,index, both render as decorations.
+Superscript {^note^} and subscript {,index,} both render as decorations.
 
 ## Table with row and column spans
 
