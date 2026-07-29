@@ -415,11 +415,51 @@ module Carve
         when "critic_insert"  then emit_children(node, ctx.merge(underline: true), out)
         when "critic_delete"  then emit_children(node, ctx.merge(strike: true), out)
         when "critic_substitute" then out << run(node[:new_text].to_s, ctx.merge(underline: true))
+        when "smart_punctuation" then out << run(smart_punctuation_text(node), ctx)
         when "raw_inline", "critic_comment"
           # No safe PDF form - drop.
         else
           emit_children(node, ctx, out) if node[:children]
         end
+      end
+
+      # Canonical glyph per smart-typography kind (Carve spec PART 9 section 8).
+      # Quote kinds are deliberately absent: their glyph is locale-dependent and
+      # is resolved during parsing, so the node carries it.
+      SMART_PUNCTUATION_GLYPHS = {
+        "ellipsis" => "\u{2026}",
+        "em_dash" => "\u{2014}",
+        "en_dash" => "\u{2013}",
+        "left_right_arrow" => "\u{2194}",
+        "rightwards_arrow" => "\u{2192}",
+        "leftwards_arrow" => "\u{2190}",
+        "rightwards_double_arrow" => "\u{21D2}",
+        "less_than_or_equal" => "\u{2264}",
+        "greater_than_or_equal" => "\u{2265}",
+        "not_equal" => "\u{2260}",
+        "plus_minus" => "\u{00B1}",
+        "copyright" => "\u{00A9}",
+        "registered" => "\u{00AE}",
+        "trademark" => "\u{2122}"
+      }.freeze
+
+      # A typographic substitution is its own node rather than text (spec PART 9
+      # section 8), carrying the resolved kind AND the author's source run.
+      #
+      # Before this existed here, the node fell through to the else branch,
+      # which emits children - and this node has none - so every quote,
+      # apostrophe, dash and ellipsis vanished from the rendered PDF with no
+      # error. That is why the resolution order matters: prefer the glyph the
+      # parser fixed (quotes are locale-dependent), then the kind table, and
+      # only fall back to the author's source run if a future kind arrives that
+      # this table does not know. Dropping to source text renders three dots
+      # instead of an ellipsis, which is wrong but visible; dropping the node
+      # renders nothing, which is not.
+      def smart_punctuation_text(node)
+        glyph = node[:glyph]
+        return glyph.to_s unless glyph.nil? || glyph.to_s.empty?
+
+        SMART_PUNCTUATION_GLYPHS.fetch(node[:kind].to_s) { node[:value].to_s }
       end
 
       def emit_children(node, ctx, out)

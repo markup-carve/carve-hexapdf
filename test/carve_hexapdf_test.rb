@@ -89,6 +89,56 @@ class CarveHexapdfTest < Minitest::Test
     assert_valid_pdf Carve::Hexapdf.render(""), min: 400
   end
 
+  def smart_pos
+    { startLine: 1, endLine: 1, startColumn: 1, endColumn: 1, startOffset: 0, endOffset: 0 }
+  end
+
+  def paragraph_doc(children)
+    { type: "document", children: [{ type: "paragraph", pos: smart_pos, children: children }] }
+  end
+
+  # A typographic substitution is its own node carrying the resolved kind and
+  # the author's source run (spec PART 9 section 8). The tree is built by hand
+  # because the engine behind Carve.parse does not emit the node yet - and that
+  # is the point: when it starts to, this must already handle it.
+  #
+  # The assertion compares against a control document where the same glyph is
+  # ordinary text. Asserting only that surrounding words survive would pass
+  # even with the node dropped entirely, which is exactly how this defect went
+  # unnoticed: the node has no children, so it fell through to the branch that
+  # emits children and rendered nothing at all.
+  def test_smart_punctuation_renders_the_same_as_its_glyph_as_text
+    [
+      [{ type: "smart_punctuation", kind: "ellipsis", value: "...", pos: smart_pos }, "\u{2026}"],
+      [{ type: "smart_punctuation", kind: "em_dash", value: "---", pos: smart_pos }, "\u{2014}"],
+      # A quote carries its resolved glyph, because the character is
+      # locale-dependent and is chosen during parsing.
+      [{ type: "smart_punctuation", kind: "left_double_quote", value: '"', glyph: "\u{201C}", pos: smart_pos },
+       "\u{201C}"]
+    ].each do |node, glyph|
+      actual = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
+        { type: "text", value: "a", pos: smart_pos }, node, { type: "text", value: "b", pos: smart_pos }
+      ])))
+      control = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
+        { type: "text", value: "a#{glyph}b", pos: smart_pos }
+      ])))
+      assert_equal control, actual, "smart punctuation #{node[:kind]} did not render as #{glyph.inspect}"
+    end
+  end
+
+  # An unknown kind degrades to the author's source run rather than
+  # disappearing: three dots instead of an ellipsis is wrong but visible, and a
+  # missing character is not.
+  def test_smart_punctuation_unknown_kind_falls_back_to_source
+    actual = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
+      { type: "smart_punctuation", kind: "kind_from_a_later_spec", value: "?!", pos: smart_pos }
+    ])))
+    control = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
+      { type: "text", value: "?!", pos: smart_pos }
+    ])))
+    assert_equal control, actual
+  end
+
   def test_unknown_and_dropped_nodes_degrade_gracefully
     # Raw HTML and comments have no PDF form; a heading must still render.
     src = <<~CRV
