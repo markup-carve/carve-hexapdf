@@ -416,6 +416,11 @@ module Carve
         when "critic_delete"  then emit_children(node, ctx.merge(strike: true), out)
         when "critic_substitute" then out << run(node[:new_text].to_s, ctx.merge(underline: true))
         when "smart_punctuation" then out << run(smart_punctuation_text(node), ctx)
+        # A character the author escaped. The backslash is authoring syntax, so
+        # the page shows the character - but the node has no children, so
+        # without this arm it falls through to the branch that emits children
+        # and renders nothing at all (carve#350, carve#355).
+        when "escaped_text" then out << run(node[:value].to_s, ctx)
         when "raw_inline", "critic_comment"
           # No safe PDF form - drop.
         else
