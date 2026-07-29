@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An escaped character no longer vanishes from the page.** `escaped_text` is
+  its own inline node (carve#350), and it carries no children - so without an
+  arm of its own it fell through to the branch that emits children and rendered
+  nothing at all. `a\-b` came out as `ab`. The same silent-drop shape as the
+  smart-punctuation node before it (carve#355).
+
+  Dormant until the engine behind `Carve.parse` emits the node; handled here
+  first so the bump lands into a renderer that already copes.
+
 ## [0.1.0] - 2026-07-11
 
 ### Added

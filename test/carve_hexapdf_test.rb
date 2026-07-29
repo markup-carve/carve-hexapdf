@@ -126,6 +126,29 @@ class CarveHexapdfTest < Minitest::Test
     end
   end
 
+  # A backslash escape is its own inline node (spec PART 11 section 7, carve#350).
+  # Built by hand for the same reason as the smart-punctuation tree above: the
+  # engine behind Carve.parse only started emitting it once carve-rs adopted the
+  # node, and this has to handle it before that bump lands rather than after.
+  #
+  # Compared against a control where the same character is ordinary text. The
+  # node carries no children, so a missing arm does not degrade - it renders
+  # nothing at all, and an assertion that only checked the surrounding words
+  # would pass with the character gone.
+  def test_escaped_text_renders_the_character_it_escaped
+    ["-", '"', "*", "."].each do |ch|
+      actual = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
+        { type: "text", value: "a", pos: smart_pos },
+        { type: "escaped_text", value: ch, pos: smart_pos },
+        { type: "text", value: "b", pos: smart_pos }
+      ])))
+      control = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
+        { type: "text", value: "a#{ch}b", pos: smart_pos }
+      ])))
+      assert_equal control, actual, "escaped #{ch.inspect} did not render as the character"
+    end
+  end
+
   # An unknown kind degrades to the author's source run rather than
   # disappearing: three dots instead of an ellipsis is wrong but visible, and a
   # missing character is not.
