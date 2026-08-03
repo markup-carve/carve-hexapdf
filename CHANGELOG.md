@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bold, italic, underline, strike, superscript and subscript reach the page
+  again.** Each emphasis sort is its own node type now, not one `emphasis` node
+  carrying a `kind` (carve-rb#32). The renderer matched only `emphasis`, so all
+  seven fell through to the default branch: the text still rendered, in the
+  regular face with no decoration, and the PDF stayed valid - which is why the
+  smoke test kept passing. `/*both*/` is a single `strong` carrying
+  `boldItalic`, so the italic is read off the flag rather than inferred from
+  nesting.
+
+- **Footnote endnote numbers are back, and the body appears once.** Definitions
+  used to arrive as a `footnote_defs` map on the root; PART 12 fixes the root at
+  three fields, so they moved into the tree as `footnote` block nodes carrying a
+  `label` (carve-rb#19, #21), and the inline became `footnote_ref` /
+  `inline_footnote` rather than `footnote`. Reading the old root field found
+  nothing, every reference failed to resolve, and the `[1]` markers silently
+  vanished while the bodies still rendered. A definition is now relocated to the
+  endnote section wherever it sits, including inside a container.
+
+  Both old spellings are still accepted, so an AST stored by an earlier version
+  renders the same.
+
 - **An escaped character no longer vanishes from the page.** `escaped_text` is
   its own inline node (carve#350), and it carries no children - so without an
   arm of its own it fell through to the branch that emits children and rendered

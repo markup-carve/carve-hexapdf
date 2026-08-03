@@ -194,6 +194,92 @@ class CarveHexapdfTest < Minitest::Test
     assert_valid_pdf Carve::Hexapdf.render(src)
   end
 
+  # Each emphasis sort is its OWN node type, not one `emphasis` node carrying a
+  # `kind` (carve-rb#32). Matching only `emphasis` meant every one of these fell
+  # through to the default branch: the text still rendered, unstyled, and the
+  # PDF stayed valid - so the smoke test above passed throughout.
+  #
+  # These assert the styling REACHES THE PAGE. Bold and italic pick a different
+  # base font; the decorations and shifts change the content stream. Highlight
+  # has no discriminator observable from a parsed document at this level, so it
+  # is deliberately not asserted here rather than pinned by something that
+  # cannot fail.
+  def font_names(src, **opts)
+    doc = HexaPDF::Document.new(io: StringIO.new(Carve::Hexapdf.render(src, **opts)))
+    doc.pages.flat_map do |page|
+      (page.resources[:Font]&.value || {}).values.map { |ref| doc.deref(ref)[:BaseFont].to_s }
+    end
+  end
+
+  def content_stream(src)
+    doc = HexaPDF::Document.new(io: StringIO.new(Carve::Hexapdf.render(src)))
+    doc.pages.map(&:contents).join
+  end
+
+  def page_strings(src)
+    doc = HexaPDF::Document.new(io: StringIO.new(Carve::Hexapdf.render(src)))
+    doc.pages.map(&:contents).join.scan(/\((.*?)\)/).flatten
+  end
+
+  def test_a_footnote_definition_is_relocated_not_duplicated
+    # The definition is a BLOCK NODE in the tree now, so it reaches the block
+    # dispatcher as well as the endnote collector. Rendering it in both places
+    # put the body on the page twice - and the existing footnote test only
+    # asserted the marker, so it passed.
+    strings = page_strings("Text[^a] and ref.\n\n[^a]: Note body.\n")
+
+    assert_includes strings, "[1]"
+    assert_equal 1, strings.count { |s| s.include?("Note body.") },
+                 "the definition body appears more than once: #{strings.inspect}"
+  end
+
+  def test_a_definition_inside_a_container_is_relocated_too
+    # The engines differ on whether a definition written inside a container is
+    # hoisted to the root, so the relocation cannot be a root-level filter.
+    strings = page_strings("::: note\nRef[^a].\n\n[^a]: Inner body.\n:::\n")
+
+    assert_equal 1, strings.count { |s| s.include?("Inner body.") },
+                 "the definition body appears more than once: #{strings.inspect}"
+  end
+
+  def test_a_stored_ast_with_the_old_root_map_still_renders
+    # `render_ast` takes whatever the caller kept. An AST serialized before the
+    # definitions moved into the tree carries them as a root map.
+    ast = {
+      type: "document",
+      footnote_defs: { "a" => [{ type: "paragraph",
+                                 children: [{ type: "text", value: "Old body." }] }] },
+      children: [{ type: "paragraph",
+                   children: [{ type: "text", value: "Ref" },
+                              { type: "footnote_ref", id: "a" }] }],
+    }
+    doc = HexaPDF::Document.new(io: StringIO.new(Carve::Hexapdf.render_ast(ast)))
+    strings = doc.pages.map(&:contents).join.scan(/\((.*?)\)/).flatten
+
+    assert_includes strings, "[1]"
+    assert(strings.any? { |s| s.include?("Old body.") }, strings.inspect)
+  end
+
+  def test_bold_and_italic_select_a_font_variant
+    assert_includes font_names("*x*"), "Times-Bold"
+    assert_includes font_names("/x/"), "Times-Italic"
+    refute_includes font_names("x"), "Times-Bold"
+  end
+
+  def test_bold_italic_selects_both
+    # `/*both*/` is a single `strong` node carrying `boldItalic`, not a `strong`
+    # wrapping an `emphasis`, so the italic has to be read off the flag.
+    assert_includes font_names("/*x*/"), "Times-BoldItalic"
+  end
+
+  def test_decorations_and_shifts_reach_the_page
+    plain = content_stream("x")
+    { "underline" => "_x_", "strike" => "~~x~~",
+      "superscript" => "{^x^}", "subscript" => "{,x,}" }.each do |name, src|
+      refute_equal plain, content_stream(src), "#{name} produced an unstyled page"
+    end
+  end
+
   def test_table_with_col_and_row_spans_renders
     src = <<~CRV
       |= A |= B |= C |

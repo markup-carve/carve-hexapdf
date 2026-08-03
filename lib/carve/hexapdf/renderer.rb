@@ -54,7 +54,7 @@ module Carve
 
       def render_document(doc)
         # Keys arrive as Symbols (symbolized JSON) while node :id is a String.
-        @footnote_defs = (doc[:footnote_defs] || {}).transform_keys(&:to_s)
+        @footnote_defs = collect_footnote_defs(doc)
         @footnotes = []
         @footnote_numbers = {}
         Array(doc[:children]).each { |node| block(node, @c) }
@@ -66,6 +66,13 @@ module Carve
 
       def block(node, target)
         case node[:type]
+        # A definition is RELOCATED, not rendered in place - it belongs in the
+        # endnote section, which is what the HTML renderer does with it too.
+        # Handled HERE rather than by filtering the root's children, because a
+        # definition written inside a container stays inside it (the engines
+        # differ on hoisting), and a root-level filter would render that one on
+        # the page and again in the endnotes.
+        when "footnote"         then nil
         when "heading"          then heading(node, target)
         when "paragraph"        then paragraph(node, target)
         when "code_block"       then code_block(node, target)
@@ -389,7 +396,15 @@ module Carve
         when "text"       then out << run(node[:value].to_s, ctx)
         when "soft_break" then out << run(" ", ctx)
         when "hard_break" then out << { text: "\n" }
-        when "emphasis"   then emit_children(node, emphasis_ctx(ctx, node[:kind]), out)
+        # Each emphasis sort is its OWN node type. They used to be one
+        # `emphasis` node carrying a `kind`, so a profile could not deny bold
+        # while allowing italic and nothing could name them apart (carve-rb#32).
+        # Matching only `emphasis` meant `*bold*` fell through to the default
+        # branch: the text still rendered, in the regular face, with nothing to
+        # report.
+        when "strong", "emphasis", "underline", "strike",
+             "superscript", "subscript", "highlight"
+          emit_children(node, emphasis_ctx(ctx, node), out)
         when "span"       then emit_children(node, ctx, out)
         when "code"       then out << run(node[:value].to_s, ctx.merge(code: true))
         when "math"       then inline_math(node, ctx, out)
@@ -405,7 +420,12 @@ module Carve
         when "emoji"    then out << run(":#{node[:name]}:", ctx)
         when "mention"  then out << run("@#{node[:user]}", ctx)
         when "tag"      then out << run("##{node[:name]}", ctx)
-        when "footnote"
+        # `footnote_ref` is `[^label]` and `inline_footnote` is `^[body]`.
+        # Both used to publish as `footnote`, which is the BLOCK definition's
+        # type - one identifier for three constructs, so nothing could tell them
+        # apart (carve-rb#19). The old name is still accepted: a tree stored by
+        # an older version can still be rendered.
+        when "footnote_ref", "inline_footnote", "footnote"
           number = register_footnote(node)
           out << run("[#{number}]", ctx.merge(super: true)) if number
         when "citation_group" then out << run(node[:raw].to_s, ctx)
@@ -471,16 +491,26 @@ module Carve
         Array(node[:children]).each { |c| emit_inline(c, ctx, out) }
       end
 
-      def emphasis_ctx(ctx, kind)
-        case kind
-        when "strong"      then ctx.merge(bold: true)
-        when "italic"      then ctx.merge(italic: true)
-        when "bold-italic" then ctx.merge(bold: true, italic: true)
-        when "underline"   then ctx.merge(underline: true)
-        when "strike"      then ctx.merge(strike: true)
-        when "super"       then ctx.merge(super: true)
-        when "sub"         then ctx.merge(sub: true)
-        when "highlight"   then ctx.merge(highlight: true)
+      # Styling for one emphasis node.
+      #
+      # `/*both*/` is a single `strong` node carrying `boldItalic`, not a
+      # `strong` wrapping an `emphasis`, so the italic has to be read off the
+      # flag rather than inferred from nesting.
+      #
+      # The legacy `kind` spelling is still honoured, so a tree stored by an
+      # older version renders the same.
+      def emphasis_ctx(ctx, node)
+        case node[:kind] || node[:type]
+        when "strong"
+          styled = ctx.merge(bold: true)
+          node[:boldItalic] ? styled.merge(italic: true) : styled
+        when "emphasis", "italic" then ctx.merge(italic: true)
+        when "bold-italic"        then ctx.merge(bold: true, italic: true)
+        when "underline"          then ctx.merge(underline: true)
+        when "strike"             then ctx.merge(strike: true)
+        when "superscript", "super" then ctx.merge(super: true)
+        when "subscript", "sub"     then ctx.merge(sub: true)
+        when "highlight"          then ctx.merge(highlight: true)
         else ctx
         end
       end
@@ -524,6 +554,40 @@ module Carve
         return style if @styles.user_set?(key, :font)
 
         style.except(:font)
+      end
+
+      # Footnote definitions, keyed by label.
+      #
+      # They used to arrive as a `footnote_defs` MAP ON THE ROOT. PART 12 fixes
+      # the root at `type`, `children` and `srcByteLength`, so carve-rb moved
+      # them into the tree as `footnote` BLOCK nodes carrying a `label`
+      # (carve-rb#19, #21). Reading the old root field found nothing, every
+      # reference failed to resolve, and the endnote numbers silently vanished
+      # from the PDF - the bodies still rendered, so the page looked plausible.
+      #
+      # They are collected from anywhere in the tree, not just the top level: a
+      # definition written inside a container is still a definition.
+      def collect_footnote_defs(doc)
+        # The old root map first, so an AST stored by an earlier version still
+        # renders - `render_ast` takes whatever the caller kept.
+        defs = (doc[:footnote_defs] || {}).transform_keys(&:to_s)
+        walk_footnote_defs(doc, defs)
+        defs
+      end
+
+      def walk_footnote_defs(node, defs)
+        return unless node.is_a?(Hash)
+
+        if node[:type] == "footnote" && node[:label]
+          defs[node[:label].to_s] ||= Array(node[:children])
+        end
+
+        node.each_value do |value|
+          case value
+          when Array then value.each { |child| walk_footnote_defs(child, defs) }
+          when Hash  then walk_footnote_defs(value, defs)
+          end
+        end
       end
 
       # Register a footnote occurrence and return its sequential number, or nil
