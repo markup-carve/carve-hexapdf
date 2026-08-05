@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Four more inline nodes reach the page instead of vanishing.** `symbol`,
+  `literal_inline`, `caption_number` and `inline_extension` each carry their
+  content in `name`, `content` or `n` rather than in `children`, and the inline
+  fallback emits children only - so they contributed nothing at all: no error, no
+  placeholder, just missing text. A captioned figure rendered its caption without
+  its number. The `emoji` arm had also gone dead when that type was renamed to
+  `symbol` upstream; both names are accepted now. What each prints follows the
+  reference engine's plain-text target. `heading_ref` and `substitution` are still
+  dropped and are pinned as known gaps, since each needs a decision rather than an
+  arm.
+
 - **Bold, italic, underline, strike, superscript and subscript reach the page
   again.** Each emphasis sort is its own node type now, not one `emphasis` node
   carrying a `kind` (carve-rb#32). The renderer matched only `emphasis`, so all
