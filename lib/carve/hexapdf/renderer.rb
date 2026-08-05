@@ -163,7 +163,7 @@ module Carve
           return image_bytes(bytes, target)
         end
 
-        content = node[:content].to_s.chomp
+        content = resolve_nbsp(node[:content]).chomp
         style = style_for("code.block", inherited_font: true, with_box: true)
         box = style.delete(:box)
         target.text(content, **style, box_style: box)
@@ -264,7 +264,7 @@ module Carve
         if io
           target.image(io, **style_for("image"))
         else
-          alt = node[:alt].to_s
+          alt = resolve_nbsp(node[:alt])
           alt = "[image: #{node[:src]}]" if alt.empty?
           target.formatted_text([{ text: alt, font: [base_font, { variant: :italic }] }],
                                 margin: [0, 0, BLOCK_GAP])
@@ -543,8 +543,25 @@ module Carve
         end
       end
 
+      # U+E000 STANDS FOR a no-break space the parser resolved - from an escaped
+      # space (`a\ b`) or from a line block's preserved indentation (PART 9
+      # section 23). PART 12 is explicit that a consumer maps it to its target's
+      # no-break space, or to an ordinary space where the target has none, and
+      # MUST NOT emit it.
+      #
+      # A PDF has one, so it maps to U+00A0. Emitting the sentinel is not merely
+      # wrong here: the default Type1 font has no glyph for a private-use
+      # codepoint, so `a\ b` raised HexaPDF::MissingGlyphError and rendered
+      # nothing at all (carve-hexapdf#14).
+      RESOLVED_NBSP = "\u{E000}"
+      NBSP = "\u{00A0}"
+
+      def resolve_nbsp(text)
+        text.to_s.gsub(RESOLVED_NBSP, NBSP)
+      end
+
       def run(text, ctx)
-        item = { text: text }
+        item = { text: resolve_nbsp(text) }
         if ctx[:code]
           # :box is a block-level pseudo-property (e.g. inherited from a user
           # "code" entry meant for code.block); HexaPDF would read a run :box

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A resolved no-break space renders instead of killing the render.** The
+  engines publish U+E000 in a text value to stand for a no-break space the parser
+  resolved - from an escaped space (`a\ b`) or a line block's preserved
+  indentation - and PART 12 says a consumer maps it to its target's no-break
+  space and must not emit it. It was drawn as-is, and the default Type1 font has
+  no glyph for a private-use codepoint, so an ordinary escaped space raised
+  `HexaPDF::MissingGlyphError` and produced no document at all. It now maps to
+  U+00A0 in text, inline code, code blocks and image alt text.
+
 - **Four more inline nodes reach the page instead of vanishing.** `symbol`,
   `literal_inline`, `caption_number` and `inline_extension` each carry their
   content in `name`, `content` or `n` rather than in `children`, and the inline
