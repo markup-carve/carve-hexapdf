@@ -417,7 +417,22 @@ module Carve
           end
         when "autolink" then out << run(node[:href].to_s, ctx.merge(link: node[:href].to_s))
         when "image"    then inline_image(node, ctx, out)
-        when "emoji"    then out << run(":#{node[:name]}:", ctx)
+        # `symbol` is what `:name:` publishes now; `emoji` was its name before
+        # the rename and is still accepted, the same way the footnote arm below
+        # still accepts `footnote`. Both print the shortcode, which is what the
+        # reference engine's plain-text target does with an unresolved one.
+        when "symbol", "emoji" then out << run(":#{node[:name]}:", ctx)
+        # The inline literal of PART 9 section 27 - a code span with the wrapper
+        # dropped. There is no wrapper in a PDF text run, so what is left is the
+        # content, unstyled: carve-js renders `A !`raw span` B` as `A raw span B`
+        # in plain text.
+        when "literal_inline" then out << run(node[:content].to_s, ctx)
+        # The number in "Figure 1:". Without this the caption renders without it.
+        when "caption_number" then out << run(node[:n].to_s, ctx)
+        # `:name[content]` - the content is an inline array, and the extension's
+        # own presentation has no PDF form, so emit what it wraps. carve-js
+        # renders `:kbd[Ctrl]` as `Ctrl` in plain text.
+        when "inline_extension" then inline_extension(node, ctx, out)
         when "mention"  then out << run("@#{node[:user]}", ctx)
         when "tag"      then out << run("##{node[:name]}", ctx)
         # `footnote_ref` is `[^label]` and `inline_footnote` is `^[body]`.
@@ -516,6 +531,18 @@ module Carve
       end
 
       # Build one formatted-text run hash for +text+ under styling +ctx+.
+      # `:name[content]` - the extension's own presentation has no PDF form, so
+      # emit what it wraps. `content` is an inline ARRAY in a parsed tree; a
+      # hand-built one may hold a bare string, and `render_ast` is public, so
+      # take both rather than raising on the second.
+      def inline_extension(node, ctx, out)
+        content = node[:content]
+        case content
+        when Array then emit_children({ children: content }, ctx, out)
+        when String then out << run(content, ctx)
+        end
+      end
+
       def run(text, ctx)
         item = { text: text }
         if ctx[:code]
