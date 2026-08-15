@@ -24,6 +24,18 @@ module Carve
     class Renderer
       BLOCK_GAP = 8
 
+      # Style properties this renderer consumes itself. They are not HexaPDF
+      # style properties, and the style chain hands each of them down to its
+      # nested keys: `table.caption` inherits `table`'s :cell_padding,
+      # `figure.group.caption` inherits `figure.group`'s column properties.
+      # Splatting one into a text box raises NoMethodError, which loses the
+      # whole document, so a style destined for a text box drops them
+      # (+text_style+). :box is dropped by +style_for+ already.
+      RENDERER_PROPS = %i[
+        cell_padding column_gap min_column_width title_margin
+        definition_indent item_spacing content_indentation
+      ].freeze
+
       # Code-fence languages that map to a diagram renderer key.
       DIAGRAM_LANGS = {
         "mermaid" => :mermaid,
@@ -84,6 +96,7 @@ module Carve
         when "admonition"       then admonition(node, target)
         when "definition_list"  then definition_list(node, target)
         when "figure"           then figure(node, target)
+        when "figure_group"     then figure_group(node, target)
         when "block_image", "image" then image_block(node, target)
         when "block_extension"  then container_of(node[:children], target)
         when "raw_block", "comment", "abbreviation_def"
@@ -129,6 +142,14 @@ module Carve
         style.delete(:font) unless inherited_font || @styles.user_set_in_chain?(key, :font)
         style.delete(:box) unless with_box
         style
+      end
+
+      # A resolved style safe to splat into a HexaPDF text box: the renderer's
+      # own properties are dropped, whether they were set on this key or
+      # inherited from an ancestor of it (see RENDERER_PROPS).
+      def text_style(key, inherited_font: false)
+        style_for(key, inherited_font: inherited_font)
+          .reject { |prop, _| RENDERER_PROPS.include?(prop) }
       end
 
       def heading(node, target)
@@ -253,10 +274,108 @@ module Carve
       def figure(node, target)
         block(node[:target], target) if node[:target]
         if node[:caption] && !node[:caption].empty?
-          style = style_for("figure.caption")
+          style = text_style("figure.caption")
           target.formatted_text(inline_runs(node[:caption], italic: true, font_family: style[:font]),
                                 **style)
         end
+      end
+
+      # A composite figure (PART 9 section 4c) is ONE float. Its panels, the
+      # stray content preserved between them and the group caption are laid out
+      # as a single box that a page break may not enter, so the caption cannot
+      # be stranded from the panels it numbers, nor a panel from its own
+      # caption.
+      #
+      # PANELS ARE THE `figure` AND `table` CHILDREN, in source order; every
+      # other child is plain group content and is drawn IN PLACE between them.
+      # Nothing here re-attaches or drops it.
+      #
+      # THE GROUP CAPTION IS ALREADY NUMBERED when it arrives: the number is a
+      # `caption_number` inline the engine resolved, and a `#` placeholder in a
+      # PANEL caption stayed literal because a panel draws nothing from the
+      # document sequence. Neither is this renderer's decision.
+      def figure_group(node, target)
+        style = style_for("figure.group", with_box: true)
+        panels = ::HexaPDF::Document::Layout::ChildrenCollector.collect(@layout) do |cont|
+          Array(node[:children]).each do |child|
+            case child[:type]
+            when "figure", "table" then panel(child, cont)
+            else block(child, cont)
+            end
+          end
+        end
+        columns = column_count(node, style)
+        body = if columns > 1
+                 [@layout.box(:column, children: panels, columns: columns, gaps: style[:column_gap])]
+               else
+                 panels
+               end
+        body += [group_caption_box(node[:caption])] if node[:caption] && !node[:caption].empty?
+        emit_box(keep_together(body, style: style[:box]), target)
+      end
+
+      # A panel keeps its host and its own caption on one page too - a caption
+      # that says "(a)" is worth nothing on the page after its image. A `table`
+      # panel keeps the table's own caption, which the table renderer draws;
+      # the panel wrapper adds nothing to it.
+      def panel(node, target)
+        children = ::HexaPDF::Document::Layout::ChildrenCollector.collect(@layout) do |cont|
+          node[:type] == "table" ? table(node, cont) : figure(node, cont)
+        end
+        emit_box(keep_together(children), target)
+      end
+
+      def group_caption_box(caption)
+        style = text_style("figure.group.caption")
+        @layout.formatted_text_box(inline_runs(caption, bold: true, font_family: style[:font]),
+                                   **style)
+      end
+
+      # `.columns-N` from the attribute line is a LAYOUT HINT, not content: it
+      # is honored when the page is wide enough to give every column
+      # +min_column_width+, and ignored in favor of a stack when it is not. The
+      # panels render either way, in source order, so no hint can cost the
+      # document a panel.
+      def column_count(node, style)
+        attrs = node[:attrs]
+        classes = attrs.is_a?(Hash) ? Array(attrs[:classes]) : []
+        hint = classes.filter_map { |c| c.to_s[/\Acolumns-(\d+)\z/, 1] }.last
+        return 1 if hint.nil?
+
+        count = hint.to_i
+        return 1 if count < 2
+
+        gaps = style[:column_gap].to_f * (count - 1)
+        return 1 if (@c.frame.width - gaps) / count < style[:min_column_width].to_f
+
+        count
+      end
+
+      # A non-splitable box that does not fit even an empty page does not
+      # degrade - HexaPDF raises "Box didn't fit multiple times", which loses
+      # the WHOLE document over one oversized figure. So the box is fitted
+      # against a full page first, and a group that cannot be kept together is
+      # allowed to split instead: page breaks inside it, panels still in source
+      # order, which is what splitting a container box preserves.
+      def keep_together(children, style: nil)
+        box = @layout.box(:container, children: children, splitable: false, style: style || {})
+        return box if fits_on_a_page?(box)
+
+        @layout.box(:container, children: children, splitable: true, style: style || {})
+      end
+
+      def fits_on_a_page?(box)
+        width = @c.frame.width
+        height = @c.frame.height
+        box.fit(width, height, ::HexaPDF::Layout::Frame.new(0, 0, width, height)).success?
+      rescue StandardError
+        false
+      end
+
+      # +target+ is the composer at the top level and a children collector
+      # inside any container; only the former draws.
+      def emit_box(box, target)
+        target.respond_to?(:draw_box) ? target.draw_box(box) : target << box
       end
 
       def image_block(node, target)
@@ -337,7 +456,7 @@ module Carve
 
         target.table(body, header: header, margin: table_style[:margin])
         if node[:caption] && !node[:caption].empty?
-          style = style_for("table.caption")
+          style = text_style("table.caption")
           target.formatted_text(inline_runs(node[:caption], italic: true, font_family: style[:font]),
                                 **style)
         end

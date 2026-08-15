@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Composite figures render as one grouped float.** A bare `::: figure`
+  container is one numbered figure of ordered panels (Carve PART 9 section 4c,
+  AST node `figure_group`). Its panels, the content preserved between them and
+  the group caption are laid out as a single box a page break may not enter,
+  and each panel keeps its own caption the same way, so the caption that numbers
+  the figure cannot land on the page after it. A group too tall for a page
+  splits rather than failing the render, panels still in source order. A
+  `.columns-N` hint is honored when the page can give every column
+  `figure.group.min_column_width` points and is otherwise ignored in favor of a
+  stack - every panel is drawn either way. Two new style keys, `figure.group`
+  and `figure.group.caption`. The parser this gem consumes does not produce the
+  node yet; `render_ast` accepts one from any engine that does.
+
 ### Fixed
+
+- **A table's caption no longer loses the whole document.** `table.caption`
+  sits under `table` in the style chain, so it inherited `cell_padding` - a
+  property this renderer reads itself and HexaPDF has never heard of - and
+  splatting it into the caption's text box raised `NoMethodError`. Every
+  captioned table was affected; no fixture had captioned one.
 
 - **A resolved no-break space renders instead of killing the render.** The
   engines publish U+E000 in a text value to stand for a no-break space the parser

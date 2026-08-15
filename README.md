@@ -121,7 +121,9 @@ win: `base_font:` maps to `base.font`, `code_font:` to `code.font`,
 | `table` | `{ font_size: 10, cell_padding: 4, margin: [2, 0, 8] }` |
 | `table.header` | `{}` |
 | `table.caption` | `{ font_size: 9, margin: [0, 0, 8] }` |
-| `figure.caption` | `{ font_size: 9, margin: [2, 0, 8], text_align: :center }` |
+| `figure.caption` | `{ font_size: 9, margin: [2, 0, 8], text_align: :center }` (panel captions too) |
+| `figure.group` | `{ box: { margin: [2, 0, 8] }, column_gap: 18, min_column_width: 90 }` |
+| `figure.group.caption` | `{ font_size: 9, margin: [4, 0, 0], text_align: :center }` |
 | `footnote` | `{ font_size: 9, margin: [0, 0, 3] }` (endnote section entries) |
 | `link` | `{ fill_color: "hp-blue" }` |
 | `highlight` | `{ background_color: "fff3a3" }` |
@@ -142,6 +144,45 @@ bodies collected into a numbered endnote section - inline `^[..]` and
 referenced `[^id]` alike), and **images** - both block and inline, embedded
 from a local file path or a `data:` URI. Task-list checkboxes are drawn in the
 list marker column, so item text and nested lists align like any other list.
+
+### Composite figures
+
+A bare `::: figure` container is one figure of ordered panels (Carve PART 9
+section 4c):
+
+```
+{.columns-2}
+::: figure
+![one](a.png)
+^ (a) One
+
+![two](b.png)
+^ (b) Two
+:::
+^ Figure #: Both samples
+```
+
+On a page that group is one float. Its panels, any content preserved between
+them and the group caption are laid out as a single box a page break may not
+enter, and each panel keeps its own caption the same way - so the caption that
+numbers the figure never lands on the page after the panels it numbers. A
+group too tall to fit a page splits instead of failing the render, with the
+panels still in source order.
+
+`.columns-N` on the attribute line is honored when the page is wide enough to
+give every column `figure.group.min_column_width` points, and is otherwise
+ignored in favor of a stack. Every panel is drawn either way: the hint decides
+arrangement, never content.
+
+An opener that carries a title or a label (`::: figure "T"`, `::: figure [g]`)
+is deliberately NOT this construct - it stays a generic container and renders
+as one.
+
+> [!NOTE]
+> The parser this gem consumes (`carve-lang`, over carve-rs) does not produce
+> `figure_group` nodes yet. The renderer accepts them today - through
+> `Carve.parse` once the engine ships the construct, and through
+> `Carve::Hexapdf.render_ast` with an AST from any engine that already does.
 
 ### Math and diagrams (renderer callables)
 

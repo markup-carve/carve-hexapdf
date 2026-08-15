@@ -289,6 +289,28 @@ class CarveHexapdfTest < Minitest::Test
     assert_valid_pdf Carve::Hexapdf.render(src)
   end
 
+  # A table's caption used to lose the whole document. `table.caption` sits
+  # under `table` in the style chain, so it inherited :cell_padding - a
+  # property this renderer reads itself and HexaPDF has never heard of - and
+  # splatting it into the caption's text box raised NoMethodError. No fixture
+  # captioned a table, so nothing noticed.
+  def test_a_captioned_table_renders
+    ast = {
+      type: "document",
+      children: [{
+        type: "table",
+        caption: [{ type: "text", value: "Table 1: Measurements" }],
+        rows: [
+          { cells: [{ header: true, children: [{ type: "text", value: "H" }] }] },
+          { cells: [{ children: [{ type: "text", value: "cell" }] }] },
+        ],
+      }],
+    }
+    bytes = Carve::Hexapdf.render_ast(ast)
+    assert_valid_pdf bytes
+    assert_includes pdf_content(bytes), "Table 1: Measurements"
+  end
+
   def test_span_counts
     # Row 1 is [^, d, <]: the `^` in column 0 extends "a" downward, and the `<`
     # in column 2 extends "d" rightward.
