@@ -5,9 +5,41 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-08-19
 
 ### Added
+
+- Initial release: `Carve::Hexapdf.render`, `.render_ast`, and `.render_file`
+  to render Carve markup to PDF via the pure-Ruby HexaPDF engine.
+- AST walker mapping Carve blocks to HexaPDF text/list/table/container/image
+  boxes and Carve inline nodes to styled text runs.
+- All inline emphasis renders with its decoration: strong/italic/bold-italic
+  (font variants), underline, strikethrough, superscript, subscript, and
+  highlight; critic insert/delete map to underline/strikethrough; footnote
+  references render as superscript.
+- Tables with header rows and full **row / column span** resolution (`^` / `<`
+  markers map to HexaPDF `row_span` / `col_span`).
+- Math and diagram fences render as embedded raster images via optional
+  `renderers:` callables (`:math`, `:mermaid`, `:graphviz`, `:chart`), degrading
+  to monospace source when no renderer is supplied.
+- Images (block and inline) embedded from local file paths or `data:` URIs.
+- Footnotes (inline `^[..]` and referenced `[^id]`) render as superscript
+  `[n]` markers with their bodies collected into a numbered endnote section.
+- Task-list checkboxes are drawn in the list marker column, so item text and
+  nested lists align like any other list.
+- Renderer callables may return `{ bytes:, width:, height: }` to control the
+  drawn size, so high-DPI rasters embed crisply.
+- Hierarchical `styles:` support through `Carve::Hexapdf::StyleMap` for
+  restyling headings, code, links, highlights, admonitions, tables, images,
+  math fallbacks, and other renderer surfaces; the `base_font:`, `code_font:`,
+  `link_color:`, and `highlight_color:` keyword options are convenience sugar
+  under the style map.
+- Graceful degradation: unknown nodes fall back to text/children, remote image
+  URLs show alt text, raw HTML and comments are dropped; the renderer never
+  raises.
+
+[Unreleased]: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/markup-carve/carve-hexapdf/releases/tag/v0.1.0
 
 - **Composite figures render as one grouped float.** A bare `::: figure`
   container is one numbered figure of ordered panels (Carve PART 9 section 4c,
@@ -79,39 +111,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Dormant until the engine behind `Carve.parse` emits the node; handled here
   first so the bump lands into a renderer that already copes.
-
-## [0.1.0] - 2026-07-11
-
-### Added
-
-- Initial release: `Carve::Hexapdf.render`, `.render_ast`, and `.render_file`
-  to render Carve markup to PDF via the pure-Ruby HexaPDF engine.
-- AST walker mapping Carve blocks to HexaPDF text/list/table/container/image
-  boxes and Carve inline nodes to styled text runs.
-- All inline emphasis renders with its decoration: strong/italic/bold-italic
-  (font variants), underline, strikethrough, superscript, subscript, and
-  highlight; critic insert/delete map to underline/strikethrough; footnote
-  references render as superscript.
-- Tables with header rows and full **row / column span** resolution (`^` / `<`
-  markers map to HexaPDF `row_span` / `col_span`).
-- Math and diagram fences render as embedded raster images via optional
-  `renderers:` callables (`:math`, `:mermaid`, `:graphviz`, `:chart`), degrading
-  to monospace source when no renderer is supplied.
-- Images (block and inline) embedded from local file paths or `data:` URIs.
-- Footnotes (inline `^[..]` and referenced `[^id]`) render as superscript
-  `[n]` markers with their bodies collected into a numbered endnote section.
-- Task-list checkboxes are drawn in the list marker column, so item text and
-  nested lists align like any other list.
-- Renderer callables may return `{ bytes:, width:, height: }` to control the
-  drawn size, so high-DPI rasters embed crisply.
-- Hierarchical `styles:` support through `Carve::Hexapdf::StyleMap` for
-  restyling headings, code, links, highlights, admonitions, tables, images,
-  math fallbacks, and other renderer surfaces; the `base_font:`, `code_font:`,
-  `link_color:`, and `highlight_color:` keyword options are convenience sugar
-  under the style map.
-- Graceful degradation: unknown nodes fall back to text/children, remote image
-  URLs show alt text, raw HTML and comments are dropped; the renderer never
-  raises.
-
-[Unreleased]: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/markup-carve/carve-hexapdf/releases/tag/v0.1.0
