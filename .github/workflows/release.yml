@@ -90,27 +90,31 @@ jobs:
           gem install --no-document ./carve-hexapdf-*.gem
           ruby -e 'require "carve/hexapdf"; print "loaded carve-hexapdf ", Carve::Hexapdf::VERSION, "\n"'
 
-      # LAST, not first. On the 2026-08-19 dispatch this sat in the guard job
-      # and failed there, so the run reported a missing key and skipped every
-      # step that inspects the gem - including the install-and-require, which
-      # is the one a rehearsal exists to exercise. RUBYGEMS_API_KEY is a
-      # per-repo secret and this repository does not have one yet; that is
-      # worth failing over, and worth failing over LAST.
-      #
-      # Presence only, deliberately. A RubyGems API key scoped to push_rubygem
-      # cannot read /api/v1/profile/me.json - it answers 401 exactly as a bad
-      # key does - so a validity check built on that endpoint would fail the
-      # least-privilege key it should encourage. An honest gap beats a wrong
-      # gate.
-      - name: The RubyGems credential is present
-        run: |
-          [ -n "${{ secrets.RUBYGEMS_API_KEY }}" ] \
-            || { echo "::error::RUBYGEMS_API_KEY is not available to this repository"; exit 1; }
-
   publish:
     name: Publish to RubyGems
     runs-on: ubuntu-latest
     needs: [guard, test]
+    # OIDC TRUSTED PUBLISHING, not an API key.
+    #
+    # This gemspec sets `rubygems_mfa_required => "true"`, and it is the only
+    # gem in the org that does. RubyGems honours that on every push: with MFA
+    # off the account it answered "Rubygem requires owners to enable MFA", and
+    # with MFA on it answered "no OTP code provided" - a prompt CI cannot fill.
+    # An API key cannot satisfy an MFA-required gem unattended, so the key was
+    # never going to work here however it was scoped.
+    #
+    # Trusted publishing replaces it: GitHub mints a short-lived OIDC token for
+    # this exact repository, workflow and environment, RubyGems exchanges it for
+    # a credential valid for minutes, and MFA is satisfied by the provenance of
+    # the request rather than by a human typing a code. It also removes the
+    # long-lived RUBYGEMS_API_KEY from the repository entirely, which is the
+    # larger win: a leaked key publishes any gem the account owns, and there is
+    # nothing to leak here.
+    #
+    # `id-token: write` is required and never granted implicitly.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
@@ -119,13 +123,22 @@ jobs:
           bundler-cache: true
       - run: gem build carve-hexapdf.gemspec
 
+      # Exchanges the OIDC token for a RubyGems credential and exports it for
+      # the push below. NOT rubygems/release-gem, which wraps this and then runs
+      # `bundle exec rake release` - that builds its own gem AND creates and
+      # pushes a git tag, so on a tag-triggered run it would try to re-create
+      # the tag that triggered it. This action is the half that matters.
+      #
+      # Skipped on a dispatch: a rehearsal must not mint a publishing
+      # credential, and there is nothing for it to authenticate.
+      - name: Exchange the OIDC token for a RubyGems credential
+        if: github.event_name != 'workflow_dispatch'
+        uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+
       - name: Publish to RubyGems
-        env:
-          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "::notice::rehearsal - nothing was published to RubyGems"
-            gem build carve-hexapdf.gemspec
             ls -l carve-hexapdf-*.gem
           else
             gem push carve-hexapdf-*.gem
