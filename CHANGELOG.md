@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The `carve-lang` floor moves to `>= 0.1.1`.** At `>= 0.1` a consumer could
+  resolve carve-lang 0.1.0, which predates the Carve 0.1.3 security release and
+  renders a list-valued URL attribute unsanitized - so this gem's own suite
+  could be green while every install of it carried a vulnerable engine. 0.1.1 is
+  the rebuild onto carve-rs 0.1.3.
+
 - **A table's caption no longer loses the whole document.** `table.caption`
   sits under `table` in the style chain, so it inherited `cell_padding` - a
   property this renderer reads itself and HexaPDF has never heard of - and
