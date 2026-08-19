@@ -1,33 +1,126 @@
+# This gem was tagged v0.1.0 and released on GitHub, and RubyGems has never
+# served it. The workflow that would have published it landed ten commits AFTER
+# that tag (#5), so the tag it was meant to react to had already been pushed and
+# this file has never run once.
+#
+# THE GATE RUNS BEFORE PUBLISH, AND PUBLISH SITS BEHIND IT VIA `needs:`. The
+# previous version of this file had no gate at all: it built the gem and pushed
+# it, with no test run, no check that the tag matched lib/carve/hexapdf/version.rb,
+# and no check that the changelog described the version being shipped.
+#
+# A DISPATCH IS A REHEARSAL, NOT A PUBLISH. The previous version published for
+# real on workflow_dispatch, and its own comment recommended dispatching it to
+# ship the old tag - an irreversible first publish with nothing verified.
+# RubyGems does not let a version be replaced.
 name: Release
 
 on:
   push:
     tags:
-      - "v*"
-  # Allows publishing a version whose tag was pushed before this workflow
-  # existed (run it with the tag selected as the ref).
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
 
 jobs:
-  publish:
-    name: Build and publish to RubyGems
+  guard:
+    name: The tag agrees with the gem
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Ruby
-        uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.2"
+          bundler-cache: true
 
-      - name: Build gem
-        run: gem build carve-hexapdf.gemspec
-
-      - name: Configure RubyGems credentials
+      - name: version.rb matches the tag
         run: |
-          mkdir -p ~/.gem
-          printf -- '---\n:rubygems_api_key: %s\n' "${{ secrets.RUBYGEMS_API_KEY }}" > ~/.gem/credentials
-          chmod 0600 ~/.gem/credentials
+          got="$(ruby -r ./lib/carve/hexapdf/version -e 'print Carve::Hexapdf::VERSION')"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "rehearsal: no tag exists, using version.rb ($got)"
+            tag="$got"
+          else
+            tag="${GITHUB_REF_NAME#v}"
+          fi
+          [ "$got" = "$tag" ] \
+            || { echo "::error::version.rb declares '$got', tag is '$tag'"; exit 1; }
+          echo "version $got"
 
-      - name: Push gem to RubyGems
-        run: gem push carve-hexapdf-*.gem
+      - name: The changelog describes this version
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+            && v="$(ruby -r ./lib/carve/hexapdf/version -e 'print Carve::Hexapdf::VERSION')"
+          grep -qE "^## \[?${v}\]? - " CHANGELOG.md \
+            || { echo "::error::CHANGELOG.md has no section for ${v}"; exit 1; }
+
+      # Presence only, deliberately. RubyGems API keys are SCOPED, and a key
+      # holding only push_rubygem cannot read /api/v1/profile/me.json - it would
+      # answer 401 exactly as a bad key does. A validity check built on that
+      # endpoint would fail the least-privilege key it should encourage, which
+      # is precisely how an equivalent crates.io check blocked a good release of
+      # tree-sitter-carve 0.1.3. Better an honest gap than a wrong gate.
+      - name: The RubyGems credential is present
+        run: |
+          [ -n "${{ secrets.RUBYGEMS_API_KEY }}" ] \
+            || { echo "::error::RUBYGEMS_API_KEY is not available to this repository"; exit 1; }
+
+  test:
+    name: Test and inspect the built gem
+    runs-on: ubuntu-latest
+    needs: [guard]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+      - run: bundle exec rake
+
+      # `spec.files` is a Dir[] glob, so a rename or a moved directory silently
+      # ships a gem missing the code it is supposed to carry. Measure the built
+      # artifact, not the working tree.
+      - name: The gem carries the library
+        run: |
+          gem build carve-hexapdf.gemspec
+          gem="$(ls carve-hexapdf-*.gem)"
+          listing="$(tar -xOf "$gem" data.tar.gz | tar -tzf -)"
+          missing=0
+          for want in lib/carve/hexapdf.rb lib/carve/hexapdf/version.rb README.md LICENSE CHANGELOG.md; do
+            printf '%s\n' "$listing" | grep -qx "$want" \
+              || { echo "::error::the gem is missing $want"; missing=1; }
+          done
+          n="$(printf '%s\n' "$listing" | grep -c '^lib/.*\.rb$')"
+          [ "$n" -ge 3 ] \
+            || { echo "::error::only $n ruby file(s) under lib/"; missing=1; }
+          echo "$n ruby files under lib/"
+          exit $missing
+
+      # What a consumer gets. A gem that builds can still fail to load.
+      - name: The built gem installs and loads
+        run: |
+          gem build carve-hexapdf.gemspec
+          gem install --no-document ./carve-hexapdf-*.gem
+          ruby -e 'require "carve/hexapdf"; print "loaded carve-hexapdf ", Carve::Hexapdf::VERSION, "\n"'
+
+  publish:
+    name: Publish to RubyGems
+    runs-on: ubuntu-latest
+    needs: [guard, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+      - run: gem build carve-hexapdf.gemspec
+
+      - name: Publish to RubyGems
+        env:
+          GEM_HOST_API_KEY: ${{ secrets.RUBYGEMS_API_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "::notice::rehearsal - nothing was published to RubyGems"
+            gem build carve-hexapdf.gemspec
+            ls -l carve-hexapdf-*.gem
+          else
+            gem push carve-hexapdf-*.gem
+          fi
