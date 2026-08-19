@@ -52,17 +52,6 @@ jobs:
           grep -qE "^## \[?${v}\]? - " CHANGELOG.md \
             || { echo "::error::CHANGELOG.md has no section for ${v}"; exit 1; }
 
-      # Presence only, deliberately. RubyGems API keys are SCOPED, and a key
-      # holding only push_rubygem cannot read /api/v1/profile/me.json - it would
-      # answer 401 exactly as a bad key does. A validity check built on that
-      # endpoint would fail the least-privilege key it should encourage, which
-      # is precisely how an equivalent crates.io check blocked a good release of
-      # tree-sitter-carve 0.1.3. Better an honest gap than a wrong gate.
-      - name: The RubyGems credential is present
-        run: |
-          [ -n "${{ secrets.RUBYGEMS_API_KEY }}" ] \
-            || { echo "::error::RUBYGEMS_API_KEY is not available to this repository"; exit 1; }
-
   test:
     name: Test and inspect the built gem
     runs-on: ubuntu-latest
@@ -100,6 +89,23 @@ jobs:
           gem build carve-hexapdf.gemspec
           gem install --no-document ./carve-hexapdf-*.gem
           ruby -e 'require "carve/hexapdf"; print "loaded carve-hexapdf ", Carve::Hexapdf::VERSION, "\n"'
+
+      # LAST, not first. On the 2026-08-19 dispatch this sat in the guard job
+      # and failed there, so the run reported a missing key and skipped every
+      # step that inspects the gem - including the install-and-require, which
+      # is the one a rehearsal exists to exercise. RUBYGEMS_API_KEY is a
+      # per-repo secret and this repository does not have one yet; that is
+      # worth failing over, and worth failing over LAST.
+      #
+      # Presence only, deliberately. A RubyGems API key scoped to push_rubygem
+      # cannot read /api/v1/profile/me.json - it answers 401 exactly as a bad
+      # key does - so a validity check built on that endpoint would fail the
+      # least-privilege key it should encourage. An honest gap beats a wrong
+      # gate.
+      - name: The RubyGems credential is present
+        run: |
+          [ -n "${{ secrets.RUBYGEMS_API_KEY }}" ] \
+            || { echo "::error::RUBYGEMS_API_KEY is not available to this repository"; exit 1; }
 
   publish:
     name: Publish to RubyGems
