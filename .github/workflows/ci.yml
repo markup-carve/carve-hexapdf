@@ -27,5 +27,14 @@ jobs:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
 
+      # A PIN NOTHING VERIFIES IS NOT A PIN. `Gemfile` pins carve-lang to a
+      # carve-rb revision, but until now nothing read it back - and this suite
+      # cannot stand in for that, because it is 82 runs green against carve-lang
+      # 0.1.0 too: most of it hands `render_ast` a Hash built in the test rather
+      # than one the engine produced. This states the engine behind the result
+      # and fails when it is not the pinned one.
+      - name: Verify the engine this run measures
+        run: bundle exec ruby script/verify_engine_pin.rb
+
       - name: Run tests
         run: bundle exec rake test

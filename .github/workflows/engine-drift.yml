@@ -15,6 +15,13 @@ name: Engine drift
 # ignore it. It DOES fail when the pinned revision is not a real commit on the
 # engine's main - a typo, a force-pushed branch, a revision that no longer
 # exists - because that is a broken build waiting to happen.
+#
+# There are two kinds of drift, and this workflow now watches both. `drift`
+# watches the carve-rb GIT repository, which is what the development pin
+# follows. `consumer` watches RUBYGEMS, which is what the gemspec range resolves
+# and therefore the only thing a user of this gem ever sees. Neither substitutes
+# for the other: carve-lang 0.1.1 published on 2026-08-18 and nothing in this
+# repository noticed, because every routine run builds the git pin instead.
 
 on:
   schedule:
@@ -38,13 +45,21 @@ jobs:
       - name: Compare the pinned revision against carve-rb main
         run: |
           set -euo pipefail
-          rev="$(grep -oE 'ref: "[0-9a-f]{40}"' Gemfile | grep -oE '[0-9a-f]{40}' | head -1)"
-          if [ -z "${rev}" ]; then
-            echo "::error::no 40-hex ref found in Gemfile; the engine dependency is not pinned"
+          # ABBREVIATED REFS COUNT. This matched `[0-9a-f]{40}` until now, so
+          # when #24 wrote a 12-hex ref the grep found nothing - and under
+          # `set -euo pipefail` the assignment itself exited 1, before the error
+          # message below could say why. The daily job failed that way from
+          # 2026-08-19 (run 32335655648) and reported no lag at all in between,
+          # which is the failure mode this whole workflow exists to prevent,
+          # one level up.
+          ref="$(sed -n 's/.*ref: "\([0-9a-f]\{7,40\}\)".*/\1/p' Gemfile | head -1)"
+          if [ -z "${ref}" ]; then
+            echo "::error::no carve-lang revision found in Gemfile; the engine dependency is not pinned"
             exit 1
           fi
-          if ! git -C carve-rb cat-file -e "${rev}^{commit}" 2>/dev/null; then
-            echo "::error::Gemfile pins ${rev}, which is not a commit in carve-rb"
+          rev="$(git -C carve-rb rev-parse --verify "${ref}^{commit}" 2>/dev/null || true)"
+          if [ -z "${rev}" ]; then
+            echo "::error::Gemfile pins ${ref}, which is not a commit in carve-rb"
             exit 1
           fi
           if ! git -C carve-rb merge-base --is-ancestor "${rev}" origin/main; then
@@ -72,5 +87,74 @@ jobs:
         with:
           ruby-version: "3.3"
           bundler-cache: true
+      - name: Verify the engine this run measures
+        run: bundle exec ruby script/verify_engine_pin.rb
       - name: Run tests
         run: bundle exec rake test
+
+  # WHAT A CONSUMER GETS, WHICH NO OTHER RUN HERE ASKS.
+  #
+  # Every job above builds the carve-rb revision `Gemfile` pins, so the gemspec
+  # range - the only thing a user of this gem resolves through - is exercised
+  # nowhere. That is the cost of pinning: no pinned run ever meets a carve-lang
+  # published after the pin, so an engine release that changed what the PDFs
+  # look like would sit unnoticed until someone raised the pin by hand. Which is
+  # the same silence the pin was added to end, pointing the other way.
+  #
+  # So this job installs the built gem into an isolated GEM_HOME and lets
+  # RubyGems resolve carve-lang through the declared range, exactly as
+  # `release.yml` does before publishing - the difference being that this one
+  # runs daily rather than on a tag.
+  consumer:
+    name: The engine a consumer resolves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install libclang (rb-sys bindgen)
+        # BOUNDED AND RETRIED. A bare `apt-get` has no timeout, so a wedged
+        # mirror hangs the job until the 6h runner limit with no output, which
+        # is indistinguishable from a slow compile. Three tries, each capped at
+        # 4 minutes: a hung mirror costs 12 minutes worst case and says so.
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 240 sudo apt-get update && timeout 240 sudo apt-get install -y libclang-dev; then
+              exit 0
+            fi
+            echo "::warning::apt attempt ${attempt} failed or timed out; retrying"
+            sleep 10
+          done
+          echo "::error::apt-get could not install libclang-dev after 3 attempts"
+          exit 1
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Build the gem
+        run: gem build carve-hexapdf.gemspec
+
+      # No bundler and no Gemfile: this must resolve the way `gem install
+      # carve-hexapdf` does for a stranger, which means through the gemspec
+      # range and nothing else.
+      # GEM_PATH AS WELL AS GEM_HOME. GEM_HOME alone only redirects where a gem
+      # is WRITTEN; RubyGems keeps its default directories in `Gem.path`, so a
+      # carve-lang already present on the runner stays visible and `require`
+      # takes the newest it can see rather than the one this install resolved.
+      # Reproduced locally, where a stale carve-lang 0.2.0 sat in the user gem
+      # directory: with GEM_HOME alone the probe loaded 0.2.0 and refused; with
+      # GEM_PATH set it resolved 0.1.1 through the declared range, which is the
+      # question being asked. The default directory stays on the path so Ruby's
+      # own default gems still activate.
+      - name: Install it the way a consumer would
+        run: |
+          default_dir="$(ruby -e 'print Gem.default_dir')"
+          export GEM_HOME="${RUNNER_TEMP}/consumer"
+          export GEM_PATH="${GEM_HOME}:${default_dir}"
+          gem install --no-document ./carve-hexapdf-*.gem
+          {
+            echo "GEM_HOME=${GEM_HOME}"
+            echo "GEM_PATH=${GEM_PATH}"
+          } >> "$GITHUB_ENV"
+
+      - name: Render through the engine that install resolved
+        run: ruby script/consumer_engine_probe.rb
