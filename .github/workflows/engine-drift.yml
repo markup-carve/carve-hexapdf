@@ -136,6 +136,7 @@ jobs:
       # No bundler and no Gemfile: this must resolve the way `gem install
       # carve-hexapdf` does for a stranger, which means through the gemspec
       # range and nothing else.
+      #
       # GEM_PATH AS WELL AS GEM_HOME. GEM_HOME alone only redirects where a gem
       # is WRITTEN; RubyGems keeps its default directories in `Gem.path`, so a
       # carve-lang already present on the runner stays visible and `require`
@@ -143,13 +144,31 @@ jobs:
       # Reproduced locally, where a stale carve-lang 0.2.0 sat in the user gem
       # directory: with GEM_HOME alone the probe loaded 0.2.0 and refused; with
       # GEM_PATH set it resolved 0.1.1 through the declared range, which is the
-      # question being asked. The default directory stays on the path so Ruby's
-      # own default gems still activate.
+      # question being asked.
+      #
+      # GEM_PATH IS THE ISOLATED PREFIX ALONE, with no default directory on it.
+      # #27 appended `Gem.default_dir` on the grounds that Ruby's own default
+      # gems need it; measured on Ruby 3.2.3, they do not. Default gems resolve
+      # through `Gem.default_specifications_dir`
+      # (`/usr/lib/ruby/gems/3.2.0/specifications/default`), which derives from
+      # neither `Gem.path` nor `Gem.default_dir` and is not even the same
+      # directory as `Gem.default_dir` (`/var/lib/gems/3.2.0`) - `json`,
+      # `openssl` and `psych` all still activate with `Gem.path` holding only
+      # the prefix below.
+      #
+      # And the declared range is no backstop against what the residual left
+      # open: a stray carve-lang INSIDE `>= 0.1.1, < 0.2.0` satisfies every
+      # claim the probe checks, because the version is right and only the
+      # location is wrong. Measured end to end with the real carve-lang 0.1.1
+      # parked outside the prefix - `gem install` reported "5 gems installed"
+      # with carve-lang not among them, having treated the dependency as
+      # already met, and the probe then rendered a PDF through an engine this
+      # step never installed. The probe now asserts where the engine loaded
+      # from, so a leak fails there too rather than resting on this line.
       - name: Install it the way a consumer would
         run: |
-          default_dir="$(ruby -e 'print Gem.default_dir')"
           export GEM_HOME="${RUNNER_TEMP}/consumer"
-          export GEM_PATH="${GEM_HOME}:${default_dir}"
+          export GEM_PATH="${GEM_HOME}"
           gem install --no-document ./carve-hexapdf-*.gem
           {
             echo "GEM_HOME=${GEM_HOME}"
