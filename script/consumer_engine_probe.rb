@@ -31,6 +31,15 @@ def refuse(message)
   exit 1
 end
 
+# `realpath` so a symlinked or relative RUNNER_TEMP does not read as a leak;
+# it raises when a path does not exist, which for GEM_HOME means the caller
+# pointed at a prefix nothing was ever installed into.
+def resolve_path(path, what)
+  File.realpath(path)
+rescue SystemCallError => e
+  refuse "#{what} #{path} cannot be resolved: #{e.message}"
+end
+
 # THE CONSUMER'S OWN ORDER, and it is load-bearing. Activating carve-hexapdf
 # first means RubyGems picks carve-lang through the range the gemspec declares,
 # the way `require "carve/hexapdf"` does in a user's project. Requiring "carve"
@@ -50,6 +59,34 @@ begin
 rescue Gem::MissingSpecError
   refuse "#{GEM} is not installed in GEM_HOME=#{ENV.fetch('GEM_HOME', '(unset)')}, so nothing " \
          "here resolved through the gemspec and this probe would be measuring some other engine"
+end
+
+# --- Did this install actually produce the engine being measured? ------------
+#
+# ISOLATION IS CHECKED, NOT ASSUMED. The version backstop further down cannot
+# see a stray engine that happens to SATISFY the declared range: it satisfies
+# every claim being checked while coming from a directory this install never
+# wrote. Measured with the real carve-lang 0.1.1 parked outside the isolated
+# prefix - `gem install` reported "5 gems installed" with carve-lang not among
+# them, having treated the dependency as already met, and every check in this
+# file then passed over that engine. So ask where the engine came from.
+#
+# This is also the check that does not depend on the caller getting GEM_PATH
+# right: a future leak in the environment fails here loudly rather than
+# reporting a healthy engine nobody in this repository installed.
+prefix = ENV["GEM_HOME"]
+if prefix.nil? || prefix.empty?
+  refuse "GEM_HOME is unset, so there is no isolated prefix to measure - see the header of this file"
+end
+
+engine = Gem.loaded_specs[ENGINE]
+refuse "#{ENGINE} never activated, so nothing here rendered through a resolved engine" if engine.nil?
+
+unless resolve_path(engine.base_dir, "the directory #{ENGINE} loaded from") ==
+       resolve_path(prefix, "the isolated GEM_HOME")
+  refuse "#{ENGINE} #{engine.version} was resolved from #{engine.base_dir}, not from the " \
+         "isolated GEM_HOME #{prefix} - this install did not produce the engine being " \
+         "measured, so the result describes a gem that was already on the machine"
 end
 
 dependency = installed.dependencies.find { |d| d.name == ENGINE }
