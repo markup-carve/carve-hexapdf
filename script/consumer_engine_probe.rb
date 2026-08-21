@@ -52,6 +52,34 @@ rescue Gem::MissingSpecError
          "here resolved through the gemspec and this probe would be measuring some other engine"
 end
 
+# --- Was the engine measured the one this install produced? ------------------
+#
+# ISOLATION IS CHECKED, NOT ASSUMED. The version backstop below cannot see a
+# stray engine that happens to SATISFY the declared range: it satisfies every
+# claim being checked while coming from a directory this install never wrote to.
+# A version check is structurally unable to catch it, because the version is
+# right and only the location is wrong. Measured with a decoy carve-lang built
+# outside the prefix: `gem install` treated the dependency as already met,
+# installed no engine at all, and every other check in this file passed.
+#
+# So ask where the engine actually came from. This is also the one check here
+# that does not depend on the CALLER getting `GEM_PATH` right - a future leak in
+# the environment surfaces here rather than silently changing what the run
+# reports (markup-carve/carve-hexapdf#28).
+prefix = ENV["GEM_HOME"]
+if prefix.nil? || prefix.empty?
+  refuse "GEM_HOME is unset, so there is no isolated prefix to measure - see the header"
+end
+
+engine = Gem.loaded_specs[ENGINE]
+refuse "#{ENGINE} never activated, so nothing here rendered through a resolved engine" if engine.nil?
+
+unless File.realpath(engine.base_dir) == File.realpath(prefix)
+  refuse "#{ENGINE} #{engine.version} was resolved from #{engine.base_dir}, not from the " \
+         "isolated GEM_HOME #{prefix} - this install did not produce the engine being " \
+         "measured, so the result describes a gem that was already on the machine"
+end
+
 dependency = installed.dependencies.find { |d| d.name == ENGINE }
 refuse "the installed #{GEM} #{installed.version} declares no #{ENGINE} dependency" if dependency.nil?
 

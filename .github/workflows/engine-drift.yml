@@ -143,13 +143,24 @@ jobs:
       # Reproduced locally, where a stale carve-lang 0.2.0 sat in the user gem
       # directory: with GEM_HOME alone the probe loaded 0.2.0 and refused; with
       # GEM_PATH set it resolved 0.1.1 through the declared range, which is the
-      # question being asked. The default directory stays on the path so Ruby's
-      # own default gems still activate.
+      # question being asked.
+      #
+      # THE ISOLATED PREFIX ALONE, with no default directory on it. #27 appended
+      # `Gem.default_dir` on the grounds that Ruby's own default gems need it.
+      # They do not: a default gem is found through
+      # `Gem.default_specifications_dir` - `/usr/lib/ruby/gems/<abi>/
+      # specifications/default` - which is derived from neither `Gem.path` nor
+      # `Gem.default_dir`, and is not even the same directory as
+      # `Gem.default_dir` (`/var/lib/gems/<abi>`). Measured on Ruby 3.2 with
+      # `Gem.path` holding only the prefix: `json`, `openssl` and `psych` all
+      # activate, each out of the default specifications directory. So the
+      # default directory bought nothing here, and it is the single most likely
+      # home for a stray engine - an unqualified `gem install carve-lang` on a
+      # runner puts one exactly there (markup-carve/carve-hexapdf#28).
       - name: Install it the way a consumer would
         run: |
-          default_dir="$(ruby -e 'print Gem.default_dir')"
           export GEM_HOME="${RUNNER_TEMP}/consumer"
-          export GEM_PATH="${GEM_HOME}:${default_dir}"
+          export GEM_PATH="${GEM_HOME}"
           gem install --no-document ./carve-hexapdf-*.gem
           {
             echo "GEM_HOME=${GEM_HOME}"

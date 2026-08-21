@@ -93,14 +93,15 @@ jobs:
       # GEM_PATH as well as GEM_HOME: GEM_HOME alone only redirects where a gem
       # is written, and RubyGems keeps its default directories in `Gem.path`, so
       # a carve-lang already on the runner would stay visible to the step below.
-      # The default directory stays on the path so Ruby's own default gems still
-      # activate.
+      #
+      # The prefix ALONE, with no default directory appended - see the reasoning
+      # in `.github/workflows/engine-drift.yml`, which inherited this shape from
+      # here, so both are corrected together (markup-carve/carve-hexapdf#28).
       - name: The built gem installs and loads
         run: |
           gem build carve-hexapdf.gemspec
-          default_dir="$(ruby -e 'print Gem.default_dir')"
           export GEM_HOME="${RUNNER_TEMP}/consumer"
-          export GEM_PATH="${GEM_HOME}:${default_dir}"
+          export GEM_PATH="${GEM_HOME}"
           gem install --no-document ./carve-hexapdf-*.gem
           ruby -e 'require "carve/hexapdf"; print "loaded carve-hexapdf ", Carve::Hexapdf::VERSION, "\n"'
           {
