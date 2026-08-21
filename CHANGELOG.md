@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- The `carve-lang` dependency is bounded: `>= 0.1.1, < 0.2.0`. The floor did not
+  move. On the engine's own 0.x scheme `0.1` is the major and the third digit
+  the minor, so the previous open range admitted, by the engine's own rules, a
+  release declared breaking - and this gem reads an AST whose node vocabulary
+  was already renamed once inside 0.1
+  ([#26](https://github.com/markup-carve/carve-hexapdf/issues/26)).
+
 ## [0.1.0] - 2026-08-19
 
 ### Added
