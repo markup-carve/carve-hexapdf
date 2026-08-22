@@ -264,7 +264,3 @@ application) or hold a
 [HexaPDF commercial license](https://hexapdf.gettalong.org/#pricing). This gem
 only bridges Carve to HexaPDF; your use of HexaPDF is governed by HexaPDF's own
 terms.
-
-## License
-
-MIT, markup-carve. See [LICENSE](LICENSE).
