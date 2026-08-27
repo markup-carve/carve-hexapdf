@@ -8,12 +8,10 @@ gemspec
 # engine. It compiles its Rust extension at install time, so a Rust toolchain is
 # required either way.
 #
-# carve-lang 0.1.1 published on 2026-08-18, so the note that used to stand here
-# - that 0.1.1 was an unpublished draft and the git source was covering for it -
-# no longer holds. The git source stays for now because it pins an exact
+# carve-lang 0.1.2 published on 2026-08-27. The git source stays because it pins an exact
 # revision rather than a floor, which is what caught #10; the ref below is the
-# v0.1.1 tag's own commit, so development and a consumer install resolve the
-# same engine.
+# v0.1.2 tag commit for development while consumers resolve through the
+# supported gemspec range.
 #
 # THE REF AND THE GEMSPEC FLOOR MOVE TOGETHER. Raising the floor to >= 0.1.1
 # while this still pointed at a 0.1.0 revision made bundler unsatisfiable -
@@ -63,5 +61,5 @@ if carve_rb && !carve_rb.empty?
 
   gem "carve-lang", path: File.expand_path(carve_rb)
 else
-  gem "carve-lang", git: "https://github.com/markup-carve/carve-rb.git", ref: "f15f30a21e7a"  # v0.1.1
+  gem "carve-lang", git: "https://github.com/markup-carve/carve-rb.git", ref: "b7f3a91a4192576de92894adf3ab3c5332199eff"  # v0.1.2
 end

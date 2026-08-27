@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.1] - 2026-08-27
+
 ### Changed
 
-- The `carve-lang` dependency is bounded: `>= 0.1.1, < 0.2.0`. The floor did not
-  move. On the engine's own 0.x scheme `0.1` is the major and the third digit
+- The development pin moves to released `carve-lang` 0.1.2, so the suite covers
+  the current embedded engine and output surface. The supported consumer range
+  remains `>= 0.1.1, < 0.2.0`: 0.1.1 still satisfies this renderer's API and
+  security requirements. On the engine's own 0.x scheme `0.1` is the major and the third digit
   the minor, so the previous open range admitted, by the engine's own rules, a
   release declared breaking - and this gem reads an AST whose node vocabulary
   was already renamed once inside 0.1
@@ -49,7 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URLs show alt text, raw HTML and comments are dropped; the renderer never
   raises.
 
-[Unreleased]: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/markup-carve/carve-hexapdf/releases/tag/v0.1.0
 
 - **Composite figures render as one grouped float.** A bare `::: figure`
