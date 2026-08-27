@@ -230,7 +230,7 @@ engine build rather than whatever the registry serves that day:
 
 ```sh
 bundle exec ruby script/verify_engine_pin.rb
-# carve-lang 0.1.1 from carve-rb f15f30a2... (Gemfile pins f15f30a21e7a)
+# carve-lang 0.1.2 from carve-rb b7f3a91a... (Gemfile pins b7f3a91a4192)
 ```
 
 CI runs that before the suite and refuses when the Gemfile, the resolved bundle
