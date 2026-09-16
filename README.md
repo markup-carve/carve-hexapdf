@@ -54,6 +54,50 @@ ast = Carve.parse("# From AST")
 pdf_bytes = Carve::Hexapdf.render_ast(ast)
 ```
 
+### Includes
+
+A Carve document can pull another file in with `{{ path }}`. A String has no
+identity of its own, so a directive in one stays literal; name the file instead
+and it expands:
+
+```ruby
+pdf_bytes = Carve::Hexapdf.render_from_file("report/index.crv")
+```
+
+`render_from_file` READS Carve from a path and hands back PDF bytes.
+`render_file` is its opposite pair: it takes Carve source and WRITES the PDF out,
+and a directive in that source stays literal.
+
+Containment defaults to the input file's own directory, so a sibling or a file
+below it resolves and nothing above it does. `include_root:` moves that root:
+
+```ruby
+Carve::Hexapdf.render_from_file("report/index.crv", include_root: "/srv/docs")
+```
+
+The root must be **absolute**. A relative one is refused rather than resolved,
+because resolving it lands on whatever directory the process happens to run in,
+which is not a root anyone chose. The named document has to sit inside the root.
+
+A target that cannot be read leaves the directive drawn as written, and the
+reason goes to stderr. The message does not say whether the file was missing or
+refused by containment: both report `include-unresolved`, so a document cannot
+be used to probe the filesystem. Pass `on_includes:` to take reporting over and
+get the dependency identities with it:
+
+```ruby
+Carve::Hexapdf.render_from_file(
+  "report/index.crv",
+  on_includes: lambda { |warnings:, dependencies:, suppressed_warnings:|
+    dependencies.each { |d| puts "#{d[:path]} #{d[:resolved] ? 'read' : d[:denial]}" }
+  }
+)
+```
+
+`extensions:` and `profile:` reach the engine on the include path, and a child
+file is parsed with the same ones as its parent. Without a root they raise,
+rather than being dropped: `Carve.parse` accepts neither.
+
 ### Options
 
 | Option | Default | Meaning |

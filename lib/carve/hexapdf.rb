@@ -45,8 +45,31 @@ module Carve
       #                 +:bytes+ and optional +:width+/+:height+ (points) to
       #                 control the drawn size; anything else degrades the
       #                 construct to its monospace source.
-      def render(source, **opts)
-        render_ast(::Carve.parse(source), **opts)
+      def render(source, include_root: nil, source_path: nil, extensions: nil,
+                 profile: nil, on_includes: nil, **opts)
+        ast = parse_source(source, include_root: include_root, source_path: source_path,
+                           extensions: extensions, profile: profile,
+                           on_includes: on_includes)
+        render_ast(ast, **opts)
+      end
+
+      # Render the Carve document at +path+, with its <tt>{{ path }}</tt>
+      # includes expanded, and return the PDF bytes.
+      #
+      #   Carve::Hexapdf.render_from_file("report/index.crv")
+      #
+      # NOT to be confused with {render_file}, which takes Carve SOURCE and
+      # writes the PDF out. This one READS the Carve and hands the bytes back.
+      #
+      # Containment defaults to the input file's own directory, so a sibling or
+      # a file below it resolves and nothing above it does. +include_root:+
+      # widens or moves that root, and reaches the engine as the caller wrote
+      # it: the engine refuses a relative root, which is what keeps containment
+      # off whatever directory the process happens to run in.
+      def render_from_file(path, include_root: nil, **opts)
+        absolute = File.expand_path(path)
+        root = include_root || File.dirname(absolute)
+        render(File.read(absolute), include_root: root, source_path: absolute, **opts)
       end
 
       # Render an already-parsed Carve AST Hash (see +Carve.parse+) to PDF
@@ -62,9 +85,63 @@ module Carve
       end
 
       # Render Carve +source+ and write the PDF to +path+. Returns +path+.
+      #
+      # +source+ is a String with no identity of its own, so a directive stays
+      # literal unless the caller names both +include_root:+ and +source_path:+.
       def render_file(source, path, **opts)
         File.binwrite(path, render(source, **opts))
         path
+      end
+
+      private
+
+      # The AST to draw: expanded when the caller named a root and a document.
+      #
+      # A String reaching this with neither is parsed as it stands, so a
+      # directive in it is text. That is the only thing a caller with no file
+      # can be given: a relative include has nothing to resolve against.
+      def parse_source(source, include_root:, source_path:, extensions:, profile:,
+                       on_includes:)
+        if include_root.nil? || source_path.nil?
+          unless extensions.nil? && profile.nil?
+            raise ArgumentError,
+                  "extensions: and profile: reach the engine on the include path only; " \
+                  "pass include_root: and source_path:, or drop them"
+          end
+
+          return ::Carve.parse(source)
+        end
+
+        result = ::Carve.parse_with_includes(source, root: include_root,
+                                                     source_path: source_path,
+                                                     extensions: extensions,
+                                                     profile: profile)
+        report_includes(result, on_includes)
+        result[:value]
+      end
+
+      # Hand the caller everything expansion found, or say what degraded.
+      #
+      # With +on_includes:+ the caller owns reporting and gets the dependency
+      # identities with it. Without it the sanitized warnings go to stderr,
+      # because a document that silently lost half its content is the failure
+      # this exists to prevent.
+      def report_includes(result, on_includes)
+        if on_includes
+          on_includes.call(warnings: Array(result[:warnings]),
+                           dependencies: Array(result[:dependencies]),
+                           suppressed_warnings: result[:suppressedWarnings].to_i)
+          return
+        end
+
+        Array(result[:warnings]).each do |warning|
+          where = warning[:file] ? "#{warning[:file]}: " : ""
+          $stderr.puts "carve-hexapdf: #{where}#{warning[:rule]}: #{warning[:message]}"
+        end
+        suppressed = result[:suppressedWarnings].to_i
+        return unless suppressed.positive?
+
+        $stderr.puts "carve-hexapdf: #{suppressed} further include warnings suppressed"
       end
     end
   end

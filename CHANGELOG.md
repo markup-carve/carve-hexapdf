@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `Carve::Hexapdf.render_from_file(path)` renders the Carve document at `path`
+  with its `{{ path }}` includes expanded, contained to the file's own directory
+  by default and to `include_root:` when one is named. String input stays
+  literal. `on_includes:` hands the caller the warnings and the dependency
+  identities; without it the sanitized warnings go to stderr. `extensions:` and
+  `profile:` are accepted on that path and reach an included child.
+  markup-carve/carve-hexapdf#36
+
+### Changed
+
+- The development engine pin moves to carve-rb `main`, past
+  markup-carve/carve-rb#127, which is the revision that exposes
+  `Carve.parse_with_includes` and carries the render options into a child. The
+  supported consumer range is unchanged.
+
 ## [0.1.1] - 2026-08-27
 
 ### Changed
