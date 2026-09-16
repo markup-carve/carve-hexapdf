@@ -54,6 +54,35 @@ ast = Carve.parse("# From AST")
 pdf_bytes = Carve::Hexapdf.render_ast(ast)
 ```
 
+### File includes
+
+`render` treats its argument as an anonymous string and leaves include
+directives literal. Use `render_path` when the source has a file identity:
+
+```ruby
+result = Carve::Hexapdf.render_path("book/main.crv")
+File.binwrite("book.pdf", result[:value])
+
+result[:warnings]
+result[:dependencies]
+```
+
+The input file's directory is the default containment root. Set
+`include_root:` to a wider absolute or relative directory when the document may
+read shared files outside that directory:
+
+```ruby
+result = Carve::Hexapdf.render_path(
+  "book/chapters/one.crv",
+  include_root: "book",
+)
+```
+
+The returned report contains sanitized warnings and every attempted dependency,
+including missing and denied targets. Included files use the same `extensions:`
+and `profile:` options as the parent. For source already held in memory, call
+`render_with_includes` with explicit absolute `root:` and `source_path:` values.
+
 ### Options
 
 | Option | Default | Meaning |

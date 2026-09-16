@@ -49,6 +49,37 @@ module Carve
         render_ast(::Carve.parse(source), **opts)
       end
 
+      # Expand contained file includes, render the resulting AST to PDF, and
+      # return the engine report. The report has the shape
+      # +{value:, warnings:, dependencies:, suppressedWarnings:}+, with PDF
+      # bytes in +:value+.
+      def render_with_includes(source, root:, source_path:, extensions: nil,
+                               profile: nil, max_depth: nil, max_bytes: nil,
+                               max_resolver_calls: nil, max_warnings: nil, **opts)
+        result = ::Carve.parse_with_includes(
+          source,
+          root: root,
+          source_path: source_path,
+          extensions: extensions,
+          profile: profile,
+          max_depth: max_depth,
+          max_bytes: max_bytes,
+          max_resolver_calls: max_resolver_calls,
+          max_warnings: max_warnings,
+        )
+        result.merge(value: render_ast(result.fetch(:value), **opts))
+      end
+
+      # Read and render a named Carve input file with includes enabled. The
+      # input file's directory is the containment root unless +include_root:+
+      # is supplied. Returns the same report as +render_with_includes+.
+      def render_path(path, include_root: nil, **opts)
+        source_path = File.expand_path(path)
+        root = File.expand_path(include_root || File.dirname(source_path))
+        render_with_includes(File.binread(source_path), root: root,
+                                                       source_path: source_path, **opts)
+      end
+
       # Render an already-parsed Carve AST Hash (see +Carve.parse+) to PDF
       # bytes. Useful when the AST is inspected or transformed before render.
       def render_ast(ast, page_size: :A4, margin: 45, base_font: nil,
