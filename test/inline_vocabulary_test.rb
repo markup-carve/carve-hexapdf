@@ -62,6 +62,21 @@ class InlineVocabularyTest < Minitest::Test
       { type: "inline_extension", name: "kbd", content: [{ type: "text", value: "Ctrl" }] },
       "Ctrl",
     ],
+    # Both halves are inline arrays (spec AST schema), and both reach the page.
+    "substitution" => [
+      {
+        type: "substitution",
+        old: [{ type: "text", value: "was" }],
+        new: [{ type: "emphasis", children: [{ type: "text", value: "is" }] }],
+      },
+      "wasis",
+    ],
+    # An empty half is `[]` rather than a missing key, so the other half still
+    # has to reach the page on its own.
+    "substitution (empty old)" => [
+      { type: "substitution", old: [], new: [{ type: "text", value: "added" }] },
+      "added",
+    ],
     "code (control)" => [{ type: "code", value: "x" }, "x"],
     "insert (control)" => [{ type: "insert", children: [{ type: "text", value: "ins" }] }, "ins"],
   }.freeze
@@ -80,11 +95,8 @@ class InlineVocabularyTest < Minitest::Test
   #   heading_ref  - carries `target` and `href` only, so printing the heading's
   #                  TEXT (what carve-js does) needs a heading index the
   #                  renderer does not build today.
-  #   substitution - carries `oldText` / `newText`; which of the two a printed
-  #                  document should show is an editorial question.
   KNOWN_GAPS = {
     "heading_ref" => { type: "heading_ref", target: "h", href: "#h" },
-    "substitution" => { type: "substitution", oldText: "a", newText: "b" },
   }.freeze
 
   REACHES_THE_PAGE.each do |label, (node, expected)|
