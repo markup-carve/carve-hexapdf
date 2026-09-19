@@ -5,7 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.1.2] - 2026-09-19
+
+### Fixed
+
+- **A substitution no longer vanishes from the page.** The inline renderer
+  dispatched on `critic_substitute` and read `new_text`; the engine publishes
+  `substitution`, whose halves are the inline arrays `old` and `new`
+  (markup-carve/carve-js#1827). The arm never fired, and the node has no
+  `children`, so the fallback rendered nothing at all. Both halves now reach the
+  page, struck for the replaced run and underlined for the replacement, matching
+  the reference ANSI and HTML renderers.
+  markup-carve/carve-hexapdf#39
+- **Inserted and deleted runs are decorated again.** The same mismatch on two
+  more arms: the dispatch read `critic_insert` and `critic_delete` where the
+  engine publishes `insert` and `delete`. Their text still reached the page
+  through the fallback, so what was lost was the underline and the
+  strikethrough, leaving an editorial mark indistinguishable from body text.
+  markup-carve/carve-hexapdf#41
 
 ### Added
 
@@ -20,9 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The development engine pin moves to carve-rb `main`, past
-  markup-carve/carve-rb#127, which is the revision that exposes
-  `Carve.parse_with_includes` and carries the render options into a child. The
-  supported consumer range is unchanged.
+  markup-carve/carve-rb#130, which exposes `Carve.parse_with_includes`, carries
+  the render options into a child, and publishes the substitution halves as
+  inline arrays. The supported consumer range is unchanged: no released
+  `carve-lang` carries the new halves yet, so a consumer resolving through that
+  range still sees a substitution render as nothing until carve-rb publishes.
 
 ## [0.1.1] - 2026-08-27
 
