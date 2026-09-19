@@ -568,7 +568,12 @@ module Carve
         when "caption_number" then (out << run(node[:number].to_s, ctx) if node[:number])
         when "critic_insert"  then emit_children(node, ctx.merge(underline: true), out)
         when "critic_delete"  then emit_children(node, ctx.merge(strike: true), out)
-        when "critic_substitute" then out << run(node[:new_text].to_s, ctx.merge(underline: true))
+        # Both halves are inline arrays, and both reach the page: struck for the
+        # replaced run, underlined for the replacement, which is what the
+        # reference ANSI and HTML renderers show.
+        when "substitution"
+          emit_children({ children: node[:old] }, ctx.merge(strike: true), out)
+          emit_children({ children: node[:new] }, ctx.merge(underline: true), out)
         when "smart_punctuation" then out << run(smart_punctuation_text(node), ctx)
         # A character the author escaped. The backslash is authoring syntax, so
         # the page shows the character - but the node has no children, so
@@ -878,7 +883,7 @@ module Carve
         text emphasis code link image span math raw_inline emoji autolink
         cross_ref caption_number mention tag citation_group inline_extension
         abbreviation footnote soft_break hard_break critic_insert critic_delete
-        critic_substitute critic_comment
+        substitution critic_comment
       ].freeze
     end
   end
