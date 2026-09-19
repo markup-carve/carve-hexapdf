@@ -566,8 +566,8 @@ module Carve
         when "abbreviation"   then out << run(node[:abbr].to_s, ctx)
         when "cross_ref"      then out << run(node[:target].to_s, ctx)
         when "caption_number" then (out << run(node[:number].to_s, ctx) if node[:number])
-        when "critic_insert"  then emit_children(node, ctx.merge(underline: true), out)
-        when "critic_delete"  then emit_children(node, ctx.merge(strike: true), out)
+        when "insert" then emit_children(node, ctx.merge(underline: true), out)
+        when "delete" then emit_children(node, ctx.merge(strike: true), out)
         # Both halves are inline arrays, and both reach the page: struck for the
         # replaced run, underlined for the replacement, which is what the
         # reference ANSI and HTML renderers show.
@@ -882,7 +882,7 @@ module Carve
       INLINE_TYPES = %w[
         text emphasis code link image span math raw_inline emoji autolink
         cross_ref caption_number mention tag citation_group inline_extension
-        abbreviation footnote soft_break hard_break critic_insert critic_delete
+        abbreviation footnote soft_break hard_break insert delete
         substitution critic_comment
       ].freeze
     end

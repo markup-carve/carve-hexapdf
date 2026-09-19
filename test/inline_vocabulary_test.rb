@@ -121,6 +121,50 @@ class InlineVocabularyTest < Minitest::Test
     end
   end
 
+  # Editorial marks whose whole point is the decoration, which text extraction
+  # cannot see: `insert` and `delete` carry `children`, so their text reached
+  # the page through the fallback even while the arms that style them were
+  # spelled `critic_insert` and `critic_delete` and never fired (#41).
+  #
+  # HexaPDF draws both an underline and a strikeout as a stroked line after the
+  # run, so counting `S` operators separates a styled run from a bare one.
+  RULED = {
+    "insert" => { type: "insert", children: [{ type: "text", value: "ins" }] },
+    "delete" => { type: "delete", children: [{ type: "text", value: "del" }] },
+    "substitution" => {
+      type: "substitution",
+      old: [{ type: "text", value: "was" }],
+      new: [{ type: "text", value: "is" }],
+    },
+  }.freeze
+
+  def strokes(node)
+    tree = { type: "document", children: [{ type: "paragraph", children: [node] }] }
+    doc = HexaPDF::Document.new(io: StringIO.new(Carve::Hexapdf.render_ast(tree)))
+    count = 0
+    doc.pages.each do |page|
+      HexaPDF::Content::Parser.parse(page.contents) { |op, _| count += 1 if op == :S }
+    end
+    count
+  end
+
+  def test_plain_text_draws_no_rule
+    assert_equal 0, strokes({ type: "text", value: "ins" }),
+                 "the control drew a rule, so counting strokes cannot tell a styled run apart"
+  end
+
+  RULED.each do |label, node|
+    define_method("test_#{label}_is_ruled") do
+      assert_operator strokes(node), :>=, 1,
+                      "#{label} drew no rule, so its run is indistinguishable from body text"
+    end
+  end
+
+  def test_a_substitution_rules_both_halves
+    assert_equal 2, strokes(RULED.fetch("substitution")),
+                 "a substitution must rule the replaced half and the replacement separately"
+  end
+
   def test_an_unhandled_type_with_children_still_emits_them
     # The fallback's good case, and the reason a type with `children` was never
     # part of this bug. Pinned so a future dispatch rewrite keeps it.
