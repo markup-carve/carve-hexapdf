@@ -12,13 +12,35 @@
 # real on workflow_dispatch, and its own comment recommended dispatching it to
 # ship the old tag - an irreversible first publish with nothing verified.
 # RubyGems does not let a version be replaced.
-name: Release
+name: Release packages and assets
 
 on:
-  push:
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      publish:
+        required: true
+        type: boolean
+      tag:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      release_tag:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      release_id:
+        required: true
+        type: string
+      release_body:
+        required: true
+        type: string
+      notes_digest:
+        required: true
+        type: string
 
 # Every job declares timeout-minutes. Without one GitHub applies a 360-minute
 # default, roughly 900x the median job in this org, so a hung step burns hours
@@ -30,6 +52,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.2"
@@ -38,11 +70,11 @@ jobs:
       - name: version.rb matches the tag
         run: |
           got="$(ruby -r ./lib/carve/hexapdf/version -e 'print Carve::Hexapdf::VERSION')"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ 'push' }}" = "workflow_dispatch" ]; then
             echo "rehearsal: no tag exists, using version.rb ($got)"
             tag="$got"
           else
-            tag="${GITHUB_REF_NAME#v}"
+            tag="${LANE_TAG#v}"
           fi
           [ "$got" = "$tag" ] \
             || { echo "::error::version.rb declares '$got', tag is '$tag'"; exit 1; }
@@ -50,8 +82,8 @@ jobs:
 
       - name: The changelog describes this version
         run: |
-          v="${GITHUB_REF_NAME#v}"
-          [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+          v="${LANE_TAG#v}"
+          [ "${{ 'push' }}" = "workflow_dispatch" ] \
             && v="$(ruby -r ./lib/carve/hexapdf/version -e 'print Carve::Hexapdf::VERSION')"
           grep -qE "^## \[?${v}\]? - " CHANGELOG.md \
             || { echo "::error::CHANGELOG.md has no section for ${v}"; exit 1; }
@@ -63,6 +95,16 @@ jobs:
     needs: [guard]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.2"
@@ -155,6 +197,7 @@ jobs:
       # it. See markup-carve/carve-wasm#80.
       contents: write
       id-token: write
+      actions: read
     steps:
       # GATE: the notes are not the workflow's to write. A CHANGELOG entry is
       # deliberately one or two lines for a contributor, which makes poor
@@ -165,25 +208,45 @@ jobs:
       # not a git ref, so addressing one by tag can match nothing, change
       # nothing and still exit 0.
       - name: A release draft for this tag exists and has notes
-        if: github.event_name != 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           release="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
-            --jq "[.[] | select(.tag_name == \"$GITHUB_REF_NAME\")] | first")"
+            --jq "[.[] | select(.tag_name == \"$LANE_TAG\")] | first")"
           if [ -z "$release" ]; then
-            echo "::error::no release for $GITHUB_REF_NAME. Write the notes first:" \
-                 "gh release create $GITHUB_REF_NAME --draft --notes-file NOTES.md"
+            echo "::error::no release for $LANE_TAG. Write the notes first:" \
+                 "gh release create $LANE_TAG --draft --notes-file NOTES.md"
             echo "::error::if a draft DOES exist, this job could not see it -" \
                  "check that the job still declares contents: write"
             exit 1
           fi
           body="$(printf '%s' "$release" | jq -r '.body // ""' | tr -d '[:space:]')"
           [ -n "$body" ] \
-            || { echo "::error::the release for $GITHUB_REF_NAME has no notes"; exit 1; }
+            || { echo "::error::the release for $LANE_TAG has no notes"; exit 1; }
           printf '%s' "$release" | jq -r '"draft=\(.draft) tag=\(.tag_name)"'
 
+        if: ${{ inputs.publish }}
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - name: Verify approval and checked tag before publishing
+        working-directory: ${{ github.workspace }}
+        if: ${{ inputs.publish }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_SHA: ${{ inputs.source_sha }}
+          RELEASE_NOTES_DIGEST: ${{ inputs.notes_digest }}
+        run: python .github/scripts/release-lane.py permit
+      - name: Expose the candidate tag locally
+        if: ${{ !inputs.publish }}
+        shell: bash
+        env:
+          CANDIDATE_TAG: ${{ inputs.tag }}
+        run: |
+          git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.2"
@@ -199,16 +262,20 @@ jobs:
       # Skipped on a dispatch: a rehearsal must not mint a publishing
       # credential, and there is nothing for it to authenticate.
       - name: Exchange the OIDC token for a RubyGems credential
-        if: github.event_name != 'workflow_dispatch'
         uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
 
+        if: ${{ inputs.publish }}
       - name: Publish to RubyGems
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "::notice::rehearsal - nothing was published to RubyGems"
-            ls -l carve-hexapdf-*.gem
+          if [ "$LANE_PUBLISH" = true ]; then
+            if [ "${{ 'push' }}" = "workflow_dispatch" ]; then
+              echo "::notice::rehearsal - nothing was published to RubyGems"
+              ls -l carve-hexapdf-*.gem
+            else
+              gem push carve-hexapdf-*.gem
+            fi
           else
-            gem push carve-hexapdf-*.gem
+            ls -l ./*.gem
           fi
 
       # A registry publish is not finished until the release page exists. The
@@ -220,24 +287,13 @@ jobs:
       #
       # Last, deliberately: a draft that stays a draft is recoverable, and one
       # published beside a failed publish is not.
-      - name: Publish the release notes
-        if: github.event_name != 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          id="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
-            --jq "[.[] | select(.tag_name == \"$GITHUB_REF_NAME\" and .draft)] | first | .id // empty")"
-          if [ -z "$id" ]; then
-            echo "No draft release for $GITHUB_REF_NAME; nothing to publish."
-            exit 0
-          fi
-          # `tag_name` goes with every PATCH of a release. Omit it on a DRAFT
-          # and GitHub replaces the tag with a generated `untagged-*`
-          # placeholder, because a draft's tag is a string on the object rather
-          # than a git ref - so the field has nothing to fall back to.
-          # `-F` (not `-f`) for draft, so it is sent as a boolean.
-          gh api "repos/$GITHUB_REPOSITORY/releases/$id" -X PATCH \
-            -f tag_name="$GITHUB_REF_NAME" -F draft=false --jq '"published \(.tag_name)"'
-          # Read it back: exit status does not tell you whether the tag survived.
-          gh api "repos/$GITHUB_REPOSITORY/releases/$id" \
-            --jq '"draft=\(.draft) tag=\(.tag_name)"'
+        shell: bash
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+env:
+  LANE_TAG: ${{ inputs.tag }}
+  LANE_REF: ${{ format('refs/tags/{0}', inputs.tag) }}
+  LANE_REF_TYPE: tag
+  LANE_PUBLISH: ${{ inputs.publish }}
