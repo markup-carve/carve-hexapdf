@@ -25,8 +25,19 @@ require "stringio"
 require "tempfile"
 
 # Resolve the gem whether run from a checkout (sibling carve-rb) or installed.
-sibling_rb = File.expand_path("../../carve-rb/lib", __dir__)
-$LOAD_PATH.unshift sibling_rb if File.directory?(sibling_rb)
+# OPT-IN, for the reason the Gemfile spells out: on `File.directory?` alone,
+# merely HAVING a carve-rb checkout beside this one silently replaced the
+# pinned engine with whatever that working tree was parked on, so the committed
+# PDFs recorded an engine nobody stated. CARVE_RB_PATH has to be set on
+# purpose, and it is the same variable the Gemfile reads.
+sibling_rb = ENV["CARVE_RB_PATH"]
+if sibling_rb && !sibling_rb.empty?
+  lib = File.expand_path("lib", sibling_rb)
+  raise "CARVE_RB_PATH=#{sibling_rb} has no lib directory" unless File.directory?(lib)
+
+  warn "using the carve-rb working tree at #{lib}, not the bundled engine"
+  $LOAD_PATH.unshift lib
+end
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 require "carve/hexapdf"
 

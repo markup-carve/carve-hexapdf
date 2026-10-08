@@ -425,6 +425,42 @@ class CarveHexapdfTest < Minitest::Test
     assert_equal 1, text.scan("(2. Referenced note body.)").size
   end
 
+  # carve-rs 0.1.8 (markup-carve/carve-rs#2341): a line holding a single `|`
+  # followed by an attribute block reaches the table check, which panicked on
+  # it rather than reading it as paragraph text.
+  #
+  # The panic was not a raised Ruby exception. It aborted the native extension
+  # with `byte range starts at 1 but ends at 0` and a `fatal`, so on the
+  # previously pinned engine (carve-rb eb302d5, carve-lang 0.1.3) this test did
+  # not fail - it killed the process running it, and a batch converting a
+  # directory of documents died on five bytes of valid input.
+  def test_a_single_pipe_with_an_attribute_block_renders_as_text
+    pdf = Carve::Hexapdf.render("|{.x}\n")
+
+    assert pdf.start_with?("%PDF-"), "the render is not a PDF: #{pdf[0, 16].inspect}"
+    assert_includes pdf_text(pdf), "(|{.x})", "the line did not reach the page as text"
+  end
+
+  # The cross-reference arm was spelled `cross_ref` while the engine publishes
+  # `heading_ref`, so every cross-reference was dropped from the page with
+  # nothing left behind. Measured on both the old and the new pin, so this is a
+  # standing defect the pin move did not cause and does not fix.
+  def test_a_cross_reference_reaches_the_page
+    text = pdf_text(Carve::Hexapdf.render("{#Plan}\n# Plan\n\nSee </#Plan>.\n"))
+
+    assert_includes text, "(Plan)"
+    refute_includes text, "(See .)", "the cross-reference contributed nothing to the page"
+  end
+
+  # An unresolved reference keeps its authored spelling, which is what the HTML
+  # target renders it as. Under exact-case lookup (carve 0.1.8) a wrongly-cased
+  # selector is the common way to reach this.
+  def test_an_unresolved_cross_reference_keeps_its_source_spelling
+    text = pdf_text(Carve::Hexapdf.render("{#Plan}\n# Plan\n\nSee </#plan>.\n"))
+
+    assert_includes text, "</#plan>"
+  end
+
   def test_task_list_checkbox_is_drawn_as_marker
     text = pdf_text(Carve::Hexapdf.render("- [x] done\n- [ ] open\n"))
     assert_includes text, "([x])"
