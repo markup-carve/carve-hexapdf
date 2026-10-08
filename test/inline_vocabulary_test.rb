@@ -77,6 +77,14 @@ class InlineVocabularyTest < Minitest::Test
       { type: "substitution", old: [], new: [{ type: "text", value: "added" }] },
       "added",
     ],
+    # A resolved cross-reference draws the target heading's text, which is what
+    # `target` carries; an unresolved one has no `href` and carries the selector
+    # as authored, so it is drawn back in its source spelling the way the HTML
+    # target renders it as literal text. Reading only the pre-rename
+    # `cross_ref` name dropped both: `See </#Plan>.` drew "See .".
+    "heading_ref" => [{ type: "heading_ref", target: "h", href: "#h" }, "h"],
+    "heading_ref (unresolved)" => [{ type: "heading_ref", target: "h" }, "</#h>"],
+    "cross_ref (the old name)" => [{ type: "cross_ref", target: "h", href: "#h" }, "h"],
     "code (control)" => [{ type: "code", value: "x" }, "x"],
     "insert (control)" => [{ type: "insert", children: [{ type: "text", value: "ins" }] }, "ins"],
   }.freeze
@@ -92,12 +100,15 @@ class InlineVocabularyTest < Minitest::Test
   # they are pinned as known gaps instead of hidden. Removing an entry here is
   # what closing carve-hexapdf#15 looks like.
   #
-  #   heading_ref  - carries `target` and `href` only, so printing the heading's
-  #                  TEXT (what carve-js does) needs a heading index the
-  #                  renderer does not build today.
-  KNOWN_GAPS = {
-    "heading_ref" => { type: "heading_ref", target: "h", href: "#h" },
-  }.freeze
+  # Empty, and the empty hash is the point: it keeps the mechanism and its
+  # failure message in place for the next gap, rather than deleting the section
+  # and leaving the next one to be hidden again.
+  #
+  # `heading_ref` was the last entry. Its note said printing the heading's TEXT
+  # needed a heading index the renderer does not build - measured, that was not
+  # so: a resolved reference already carries the target heading's text in
+  # `target`, so no index is needed and the arm is three lines.
+  KNOWN_GAPS = {}.freeze
 
   REACHES_THE_PAGE.each do |label, (node, expected)|
     define_method("test_#{label.gsub(/\W+/, '_')}_reaches_the_page") do

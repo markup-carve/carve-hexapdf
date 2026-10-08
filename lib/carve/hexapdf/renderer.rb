@@ -564,7 +564,23 @@ module Carve
           out << run("[#{number}]", ctx.merge(super: true)) if number
         when "citation_group" then out << run(node[:raw].to_s, ctx)
         when "abbreviation"   then out << run(node[:abbr].to_s, ctx)
-        when "cross_ref"      then out << run(node[:target].to_s, ctx)
+        # `heading_ref` is what `</#id>` publishes; `cross_ref` was its name
+        # before the rename and is still accepted, like the footnote arm above.
+        # Reading only `cross_ref` dropped every cross-reference from the page
+        # with no marker left behind: `See </#Plan>.` drew "See .".
+        #
+        # A resolved reference carries `href` and a `target` that is the target
+        # heading's TEXT, so it draws as a link over that text. An unresolved
+        # one carries no `href` and a `target` that is the selector as authored,
+        # which the HTML target renders as literal source - so it is drawn back
+        # in its source spelling rather than as a bare word that reads like
+        # prose.
+        when "heading_ref", "cross_ref"
+          if node[:href].to_s.empty?
+            out << run("</##{node[:target]}>", ctx)
+          else
+            out << run(node[:target].to_s, ctx.merge(link: node[:href].to_s))
+          end
         when "caption_number" then (out << run(node[:number].to_s, ctx) if node[:number])
         when "insert" then emit_children(node, ctx.merge(underline: true), out)
         when "delete" then emit_children(node, ctx.merge(strike: true), out)
@@ -767,7 +783,12 @@ module Carve
           return @footnotes.last[:number]
         end
 
-        id = node[:id]
+        # `label` since carve-rb 0.1.4; `id` is the pre-rename spelling and is
+        # still accepted, the same way the node-type arms above accept both
+        # vocabularies. Reading only `id` silently dropped the body: the marker
+        # still numbered itself from `node[:number]`, so the page kept `[2]`
+        # and lost "2. Referenced note body." entirely.
+        id = node[:label] || node[:id]
         if id && @footnote_defs.key?(id)
           return @footnote_numbers[id] ||= begin
             @footnotes << { number: @footnotes.size + 1, blocks: @footnote_defs[id] }

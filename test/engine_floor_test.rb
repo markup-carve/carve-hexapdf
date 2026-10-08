@@ -34,6 +34,8 @@
 # an exception.
 
 require "minitest/autorun"
+require "stringio"
+require "hexapdf"
 require "carve/hexapdf"
 
 class EngineFloorTest < Minitest::Test
@@ -64,10 +66,63 @@ class EngineFloorTest < Minitest::Test
     end
   end
 
+  # THE FIELDS, not only the type names. A node arriving under the right type
+  # with a renamed field reads as a healthy vocabulary above and still loses
+  # content: carve-rb renamed `footnote_ref`'s `id` to `label`, this renderer
+  # read only `id`, and the referenced note body stopped reaching the page
+  # while the marker kept numbering itself. Every assertion in VOCABULARY
+  # passed throughout.
+  #
+  # Asserted as "one of the spellings the renderer accepts is present", because
+  # the renderer deliberately accepts both; what must never hold is NEITHER.
+  def test_a_footnote_reference_carries_a_label_the_renderer_can_match
+    tree = Carve.parse("a note[^n]\n\n[^n]: text\n")
+    ref = find_node(tree, "footnote_ref")
+    refute_nil ref, "the resolved carve-lang (#{Carve::VERSION}) publishes no footnote_ref node"
+
+    key = ref[:label] || ref[:id]
+    refute_nil key,
+               "footnote_ref carries neither :label nor :id (keys: #{ref.keys.inspect}), so " \
+               "register_footnote cannot match it to a definition and the note body is dropped " \
+               "from the page while the marker still numbers itself"
+
+    definition = find_node(tree, "footnote")
+    refute_nil definition, "no footnote definition node to match the reference against"
+    assert_equal key, definition[:label] || definition[:id],
+                 "the reference and the definition name the footnote differently, so no " \
+                 "definition resolves"
+  end
+
+  def find_node(node, type)
+    case node
+    when Hash
+      return node if node[:type] == type
+
+      node.each_value do |v|
+        next unless v.is_a?(Array) || v.is_a?(Hash)
+
+        found = find_node(v, type)
+        return found if found
+      end
+      nil
+    when Array
+      node.each do |c|
+        found = find_node(c, type)
+        return found if found
+      end
+      nil
+    end
+  end
+
   # THE DISCRIMINATOR. Every assertion above would hold over an engine whose
   # output this renderer could no longer draw, and the file would report a
-  # healthy floor while every PDF came out empty. This is what makes the three
-  # above evidence rather than a shape check.
+  # healthy floor while every PDF came out empty. This is what makes the rest
+  # evidence rather than a shape check.
+  #
+  # It asserts the TEXT on the page, not the byte count. A size floor is not a
+  # discriminator: the footnote regression above left the document 76 bytes
+  # shorter and comfortably over any such floor, so `bytesize > 512` reported a
+  # healthy engine over a page that had silently lost its only note.
   def test_a_document_still_reaches_a_page_through_the_resolved_engine
     pdf = Carve::Hexapdf.render(<<~CARVE)
       # Heading
@@ -78,6 +133,15 @@ class EngineFloorTest < Minitest::Test
     CARVE
 
     assert pdf.start_with?("%PDF-"), "the render is not a PDF: #{pdf[0, 16].inspect}"
-    assert_operator pdf.bytesize, :>, 512, "the render is too small to hold the document"
+
+    doc = HexaPDF::Document.new(io: StringIO.new(pdf))
+    text = doc.pages.map(&:contents).join.scan(/\((?:[^()\\]|\\.)*\)/).join(" ")
+
+    ["(Heading)", "(bold)", "(1. the note)"].each do |want|
+      assert_includes text, want,
+                      "the resolved carve-lang (#{Carve::VERSION}) produced a page without " \
+                      "#{want}. The floor in carve-hexapdf.gemspec is the claim that this " \
+                      "engine's output is one this renderer can draw."
+    end
   end
 end
