@@ -85,6 +85,7 @@ class InlineVocabularyTest < Minitest::Test
     "heading_ref" => [{ type: "heading_ref", target: "h", href: "#h" }, "h"],
     "heading_ref (unresolved)" => [{ type: "heading_ref", target: "h" }, "</#h>"],
     "cross_ref (the old name)" => [{ type: "cross_ref", target: "h", href: "#h" }, "h"],
+    "cell_wrap" => [{ type: "cell_wrap", line: 1 }, "< >"],
     "code (control)" => [{ type: "code", value: "x" }, "x"],
     "insert (control)" => [{ type: "insert", children: [{ type: "text", value: "ins" }] }, "ins"],
   }.freeze

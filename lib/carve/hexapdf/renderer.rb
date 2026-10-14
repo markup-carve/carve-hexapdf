@@ -514,6 +514,8 @@ module Carve
         case node[:type]
         when "text"       then out << run(node[:value].to_s, ctx)
         when "soft_break" then out << run(" ", ctx)
+        # A `+` continuation row join; the spec renders it as one space.
+        when "cell_wrap"  then out << run(" ", ctx)
         when "hard_break" then out << { text: "\n" }
         # Each emphasis sort is its OWN node type. They used to be one
         # `emphasis` node carrying a `kind`, so a profile could not deny bold

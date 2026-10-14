@@ -44,6 +44,7 @@ class PublishedVocabularyTest < Minitest::Test
     "- a\n- b\n\n1. one\n2. two\n\n- [x] done\n",
     "> quoted\n\n```ruby\nx = 1\n```\n\n---\n",
     "| a | b |\n|---|---|\n| 1 | 2 |\n",
+    "| a | b |\n|---|---|\n| 1 | 2 |\n+ x | y |\n",
     "::: note\ninside\n:::\n\n![alt](x.png)\n",
     "[link](https://example.com) and <https://example.com>\n",
     "Term\n: definition\n\n~~struck~~ and ==marked== and H~2~O and x^2^\n",
