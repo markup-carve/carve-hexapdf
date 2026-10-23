@@ -20,19 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # carve-lang builds a Rust native extension at install time.
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install libclang (rb-sys bindgen)
-        run: sudo apt-get update && sudo apt-get install -y libclang-dev
-
+      # No Rust toolchain or libclang: the pinned carve-lang ships a precompiled
+      # gem for this platform on every Ruby in the matrix.
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
 
-      # A PIN NOTHING VERIFIES IS NOT A PIN. `Gemfile` pins carve-lang to a
-      # carve-rb revision, but until now nothing read it back - and this suite
+      # A PIN NOTHING VERIFIES IS NOT A PIN. `Gemfile` pins carve-lang to an
+      # exact release, but until now nothing read it back - and this suite
       # cannot stand in for that, because it is 82 runs green against carve-lang
       # 0.1.0 too: most of it hands `render_ast` a Hash built in the test rather
       # than one the engine produced. This states the engine behind the result
