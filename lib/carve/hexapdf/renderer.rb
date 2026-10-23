@@ -589,9 +589,11 @@ module Carve
         # Both halves are inline arrays, and both reach the page: struck for the
         # replaced run, underlined for the replacement, which is what the
         # reference ANSI and HTML renderers show.
+        # carve-lang 0.1.3 and older publish the halves as `oldText`/`newText`
+        # strings; the gemspec floor still admits those engines.
         when "substitution"
-          emit_children({ children: node[:old] }, ctx.merge(strike: true), out)
-          emit_children({ children: node[:new] }, ctx.merge(underline: true), out)
+          emit_half(node[:old], node[:oldText], ctx.merge(strike: true), out)
+          emit_half(node[:new], node[:newText], ctx.merge(underline: true), out)
         when "smart_punctuation" then out << run(smart_punctuation_text(node), ctx)
         # A character the author escaped. The backslash is authoring syntax, so
         # the page shows the character - but the node has no children, so
@@ -646,6 +648,14 @@ module Carve
 
       def emit_children(node, ctx, out)
         Array(node[:children]).each { |c| emit_inline(c, ctx, out) }
+      end
+
+      def emit_half(inlines, text, ctx, out)
+        if inlines.nil? && text
+          out << run(text.to_s, ctx)
+        else
+          emit_children({ children: inlines }, ctx, out)
+        end
       end
 
       # Styling for one emphasis node.

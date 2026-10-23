@@ -77,6 +77,11 @@ class InlineVocabularyTest < Minitest::Test
       { type: "substitution", old: [], new: [{ type: "text", value: "added" }] },
       "added",
     ],
+    # carve-lang 0.1.3 and older publish string halves, and the floor admits them.
+    "substitution (pre-0.1.4 string halves)" => [
+      { type: "substitution", oldText: "was", newText: "is" },
+      "wasis",
+    ],
     # A resolved cross-reference draws the target heading's text, which is what
     # `target` carries; an unresolved one has no `href` and carries the selector
     # as authored, so it is drawn back in its source spelling the way the HTML
