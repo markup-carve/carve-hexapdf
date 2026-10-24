@@ -54,6 +54,9 @@ ast = Carve.parse("# From AST")
 pdf_bytes = Carve::Hexapdf.render_ast(ast)
 ```
 
+For interchange `ruby` nodes, PDF text shows each pair as
+`base(annotation)`, including `()` when the annotation is empty.
+
 ### Includes
 
 A Carve document can pull another file in with `{{ path }}`. A String has no

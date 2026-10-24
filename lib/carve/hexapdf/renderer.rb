@@ -594,6 +594,13 @@ module Carve
         when "substitution"
           emit_half(node[:old], node[:oldText], ctx.merge(strike: true), out)
           emit_half(node[:new], node[:newText], ctx.merge(underline: true), out)
+        when "ruby"
+          Array(node[:pairs]).each do |pair|
+            Array(pair[:base]).each { |part| emit_inline(part, ctx, out) }
+            out << run("(", ctx)
+            Array(pair[:annotation]).each { |part| emit_inline(part, ctx, out) }
+            out << run(")", ctx)
+          end
         when "smart_punctuation" then out << run(smart_punctuation_text(node), ctx)
         # A character the author escaped. The backslash is authoring syntax, so
         # the page shows the character - but the node has no children, so
