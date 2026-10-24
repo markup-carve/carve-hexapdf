@@ -15,7 +15,7 @@ the gemspec range resolves that day:
 
 ```sh
 bundle exec ruby script/verify_engine_pin.rb
-# carve-lang 0.1.11 from https://rubygems.org/ (Gemfile pins 0.1.11)
+# carve-lang 0.1.12 from https://rubygems.org/ (Gemfile pins 0.1.12)
 ```
 
 CI runs that before the suite and refuses when the Gemfile, the resolved bundle

@@ -7,7 +7,7 @@ gemspec
 # The engine is the RELEASED carve-lang gem at an exact version, so a
 # development run measures a version a consumer can install. It used to be a
 # carve-rb git revision; released versions replaced that once carve-rb shipped
-# precompiled gems on every platform CI runs. carve-lang 0.1.11 also carries
+# precompiled gems on every platform CI runs. carve-lang 0.1.12 also carries
 # the `substitution` halves the renderer reads (#39).
 #
 # The pin and the gemspec floor are different claims: the floor is the oldest
@@ -29,5 +29,5 @@ if carve_rb && !carve_rb.empty?
 
   gem "carve-lang", path: File.expand_path(carve_rb)
 else
-  gem "carve-lang", "0.1.11"
+  gem "carve-lang", "0.1.12"
 end
