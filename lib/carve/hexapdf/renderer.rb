@@ -429,7 +429,9 @@ module Carve
         resolved = resolve_spans(Array(node[:rows]))
         return if resolved.empty?
 
-        header_count = resolved.first.any? { |o| o[:header] } ? 1 : 0
+        # HexaPDF cannot repeat a header whose cell spans into the body.
+        header_count = resolved.first.any? { |o| o[:header] } &&
+                       resolved.first.none? { |o| o[:row_span] > 1 } ? 1 : 0
         table_style = style_for("table")
         header_style = style_for("table.header")
 
@@ -478,8 +480,17 @@ module Carve
             case cell[:span]
             when "colspan"
               owner = last || col_owner[col - 1]
-              owner[:col_span] += 1 if owner
-              col_owner[col] = owner if owner
+              if owner
+                owner[:col_span] += 1
+                col_owner[col] = owner
+              else
+                # A leading marker has no cell to extend. Keep its grid slot
+                # so the table has a drawable cell in this row.
+                o = { cell: cell, header: cell[:header], col_span: 1, row_span: 1 }
+                emitted << o
+                last = o
+                col_owner[col] = o
+              end
             when "rowspan"
               owner = col_owner[col]
               # A multi-column cell has one `^` per covered column on the next
@@ -488,8 +499,12 @@ module Carve
                 owner[:row_span] += 1
                 bumped[owner.object_id] = true
               end
-              # col_owner[col] stays pointing at the same originator so a
-              # further `^` in the next row chains onto it.
+              if owner.nil?
+                o = { cell: cell, header: cell[:header], col_span: 1, row_span: 1 }
+                emitted << o
+                col_owner[col] = o
+              end
+              # A valid owner's slot remains available for further `^` rows.
             else
               o = { cell: cell, header: cell[:header], col_span: 1, row_span: 1 }
               emitted << o
