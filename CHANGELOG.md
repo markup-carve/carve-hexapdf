@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-24
+
+Ruby interchange text now appears in rendered PDFs.
+
+### Fixes
+
+- Ruby base text and annotations render together instead of losing the annotation (#58).
+
+**Full Changelog**: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.4...v0.1.5
+
+
 ## [0.1.4] - 2026-10-23
 
 ### Fixed
