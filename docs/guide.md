@@ -200,10 +200,10 @@ section 4c):
 ```
 {.columns-2}
 ::: figure
-![one](../a.png)
+![one](a.png)
 ^ (a) One
 
-![two](../b.png)
+![two](b.png)
 ^ (b) Two
 :::
 ^ Figure #: Both samples
