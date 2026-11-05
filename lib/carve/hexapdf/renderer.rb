@@ -257,13 +257,15 @@ module Carve
       def definition_list(node, target)
         style = style_for("definition_list", with_box: true)
         target.container(style: style[:box]) do |cont|
+          # `items` is a flat run of definition_term / definition_description
+          # nodes, not term/definition pairs.
           Array(node[:items]).each do |item|
-            Array(item[:terms]).each do |term|
-              cont.formatted_text(inline_runs(term, bold: true), margin: [2, 0, 1])
-            end
-            Array(item[:definitions]).each do |defn|
+            case item[:type]
+            when "definition_term"
+              cont.formatted_text(inline_runs(item[:children], bold: true), margin: [2, 0, 1])
+            when "definition_description"
               cont.container(style: { padding: [0, 0, 0, style[:definition_indent]] }) do |dcont|
-                Array(defn).each { |ch| block(ch, dcont) }
+                Array(item[:children]).each { |ch| block(ch, dcont) }
               end
             end
           end
