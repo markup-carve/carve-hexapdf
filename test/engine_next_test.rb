@@ -4,8 +4,7 @@ require "minitest/autorun"
 require "stringio"
 require "carve/hexapdf"
 
-# Readings of the next engine release, as they reach the page. These fail on
-# carve-lang 0.1.13, which predates them.
+# Engine readings that landed after carve-lang 0.1.13, as they reach the page.
 class EngineNextTest < Minitest::Test
   class Positions < HexaPDF::Content::Processor
     attr_reader :at
