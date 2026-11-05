@@ -60,6 +60,12 @@ class TableAlignmentTest < Minitest::Test
     assert_in_delta x["1"], x["6"], 1
   end
 
+  def test_span_marker_keeps_its_row_in_the_header
+    x = render("|= A |= Long header text |\n| ^ |=> C |\n| 1 | 2 |\n")
+
+    assert_operator x["2"], :>, x["Long header text"]
+  end
+
   def test_columns_metadata_aligns_cells_without_their_own
     cell = ->(text, **extra) { { type: "table_cell", header: false, children: [{ type: "text", value: text }], **extra } }
     ast = {

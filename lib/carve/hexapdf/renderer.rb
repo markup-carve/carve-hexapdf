@@ -479,9 +479,13 @@ module Carve
         columns = Array(node[:columns]).map { |c| (c || {}).slice(:align) }
         Array(node[:rows]).each do |row|
           cells = Array(row[:cells])
-          break if cells.empty? || !cells.all? { |cell| cell[:header] }
+          # A `^` / `<` marker is not a header cell, but leaves its row in the head.
+          content = cells.reject { |cell| cell[:span] }
+          break if content.empty? || !content.all? { |cell| cell[:header] }
 
           cells.each_with_index do |cell, col|
+            next if cell[:span]
+
             (columns[col] ||= {})[:align] = cell[:align] if cell[:align]
           end
         end
