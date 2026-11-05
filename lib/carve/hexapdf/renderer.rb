@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "stringio"
-require "base64"
 
 require_relative "style_map"
 
@@ -905,7 +904,7 @@ module Carve
           meta, data = src.split(",", 2)
           return nil unless data
 
-          bytes = meta.include?(";base64") ? Base64.decode64(data) : data
+          bytes = meta.include?(";base64") ? data.unpack1("m") : data
           return StringIO.new(bytes)
         end
         return src if File.file?(src)
