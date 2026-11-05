@@ -8,10 +8,10 @@ Superscript {^note^} and subscript {,index,} both render as decorations.
 
 ## Table with row and column spans
 
-|= Region  |= Q1 |= Q2 |= Q3 |
-| EMEA     | 12  | 15  | 19  |
-| APAC     | 8   | 11  | 22  |
-| ^        | 20  | <   | 25  |
+|= Region |= Q1 |= Q2 |= Q3 |
+| EMEA    | 12  | 15  | 19  |
+| APAC    | 8   | 11  | 22  |
+| ^       | 20  | <   | 25  |
 
 The `^` in the last row extends the "APAC" cell down two rows; the `<` merges
 into the cell on its left.

@@ -29,5 +29,5 @@ if carve_rb && !carve_rb.empty?
 
   gem "carve-lang", path: File.expand_path(carve_rb)
 else
-  gem "carve-lang", "0.1.12"
+  gem "carve-lang", "0.1.13"
 end
