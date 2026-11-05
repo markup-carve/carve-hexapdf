@@ -17,11 +17,11 @@ The parser runs in *two passes*:
 
 ## Engines
 
-|= Engine  |= Language  |= Status   |
-| carve-js | TypeScript | reference |
-| carve-rs | Rust       | reference |
-| carve-php| PHP        | full      |
-| carve-rb | Ruby (FFI) | full      |
+|= Engine   |= Language  |= Status   |
+| carve-js  | TypeScript | reference |
+| carve-rs  | Rust       | reference |
+| carve-php | PHP        | full      |
+| carve-rb  | Ruby (FFI) | full      |
 
 ## Task status
 
@@ -35,10 +35,9 @@ The parser runs in *two passes*:
 ## Notes
 
 :: Term
-:  A single unit of markup meaning.
-
+: A single unit of markup meaning.
 :: AST
-:  The parsed tree returned by `Carve.parse`.
+: The parsed tree returned by `Carve.parse`.
 
 ```rust
 pub fn parse(source: &str) -> Document {
@@ -47,6 +46,6 @@ pub fn parse(source: &str) -> Document {
 }
 ```
 
----
+***
 
 Built with the pure-Ruby HexaPDF engine.
