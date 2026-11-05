@@ -435,6 +435,7 @@ module Carve
                        resolved.first.none? { |o| o[:row_span] > 1 } ? 1 : 0
         table_style = style_for("table")
         header_style = style_for("table.header")
+        columns = column_alignments(node)
 
         cell_boxes = resolved.map do |row|
           row.map do |o|
@@ -445,6 +446,9 @@ module Carve
             # :margin belongs to the table box, :cell_padding is our pseudo-prop.
             box_opts = cell_style.except(:margin, :cell_padding, :box)
             box_opts[:padding] = cell_style[:cell_padding]
+            column = columns[o[:col]] || {}
+            align = o[:cell][:align] || column[:align]
+            box_opts[:text_align] = CELL_ALIGN[align] if CELL_ALIGN.key?(align)
             box = @layout.formatted_text_box(runs, **box_opts)
             hash = { content: box }
             hash[:col_span] = o[:col_span] if o[:col_span] > 1
@@ -465,9 +469,28 @@ module Carve
         end
       end
 
+      CELL_ALIGN = { "left" => :left, "center" => :center, "right" => :right }.freeze
+
+      # A cell without its own alignment inherits its column's: the table's
+      # `columns` metadata, overridden by the leading header rows (the HTML
+      # `thead`), a later row winning. Any other cell's alignment is local.
+      # Vertical alignment is not drawn: `text_valign` overflows a table cell.
+      def column_alignments(node)
+        columns = Array(node[:columns]).map { |c| (c || {}).slice(:align) }
+        Array(node[:rows]).each do |row|
+          cells = Array(row[:cells])
+          break if cells.empty? || !cells.all? { |cell| cell[:header] }
+
+          cells.each_with_index do |cell, col|
+            (columns[col] ||= {})[:align] = cell[:align] if cell[:align]
+          end
+        end
+        columns
+      end
+
       # Resolve Carve's explicit span markers (a `<` cell = merge left, a `^`
       # cell = merge up) into per-cell col_span / row_span counts, returning
-      # rows of originator hashes {cell:, header:, col_span:, row_span:} with
+      # rows of originator hashes {cell:, header:, col:, col_span:, row_span:} with
       # marker cells dropped. Every covered grid position is explicit in Carve,
       # so a cell's column index equals its position in the row.
       def resolve_spans(rows)
@@ -487,7 +510,7 @@ module Carve
               else
                 # A leading marker has no cell to extend. Keep its grid slot
                 # so the table has a drawable cell in this row.
-                o = { cell: cell, header: cell[:header], col_span: 1, row_span: 1 }
+                o = { cell: cell, header: cell[:header], col: col, col_span: 1, row_span: 1 }
                 emitted << o
                 last = o
                 col_owner[col] = o
@@ -501,13 +524,13 @@ module Carve
                 bumped[owner.object_id] = true
               end
               if owner.nil?
-                o = { cell: cell, header: cell[:header], col_span: 1, row_span: 1 }
+                o = { cell: cell, header: cell[:header], col: col, col_span: 1, row_span: 1 }
                 emitted << o
                 col_owner[col] = o
               end
               # A valid owner's slot remains available for further `^` rows.
             else
-              o = { cell: cell, header: cell[:header], col_span: 1, row_span: 1 }
+              o = { cell: cell, header: cell[:header], col: col, col_span: 1, row_span: 1 }
               emitted << o
               last = o
               col_owner[col] = o
