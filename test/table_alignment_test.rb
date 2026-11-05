@@ -66,6 +66,15 @@ class TableAlignmentTest < Minitest::Test
     assert_operator x["2"], :>, x["Long header text"]
   end
 
+  def test_declared_head_rows_decide_the_head
+    none = render("{header-rows=0}\n|=> Long header text |\n| 1 |\n")
+    two = render("{header-rows=2}\n|=> Long header text |\n| b |\n| 1 |\n")
+
+    assert_operator none["Long header text"], :>, none["1"]
+    assert_operator two["1"], :>, two["Long header text"]
+    assert_operator two["b"], :>, two["Long header text"]
+  end
+
   def test_columns_metadata_aligns_cells_without_their_own
     cell = ->(text, **extra) { { type: "table_cell", header: false, children: [{ type: "text", value: text }], **extra } }
     ast = {

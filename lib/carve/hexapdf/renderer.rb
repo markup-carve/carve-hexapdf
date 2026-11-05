@@ -472,24 +472,29 @@ module Carve
       CELL_ALIGN = { "left" => :left, "center" => :center, "right" => :right }.freeze
 
       # A cell without its own alignment inherits its column's: the table's
-      # `columns` metadata, overridden by the leading header rows (the HTML
-      # `thead`), a later row winning. Any other cell's alignment is local.
+      # `columns` metadata, overridden by the head rows (the HTML `thead`), a
+      # later row winning. Any other cell's alignment is local. The head is
+      # `rowGroups.headRows` when published, else the leading header rows.
       # Vertical alignment is not drawn: `text_valign` overflows a table cell.
       def column_alignments(node)
         columns = Array(node[:columns]).map { |c| (c || {}).slice(:align) }
-        Array(node[:rows]).each do |row|
-          cells = Array(row[:cells])
-          # A `^` / `<` marker is not a header cell, but leaves its row in the head.
-          content = cells.reject { |cell| cell[:span] }
-          break if content.empty? || !content.all? { |cell| cell[:header] }
-
-          cells.each_with_index do |cell, col|
+        rows = Array(node[:rows])
+        declared = node.dig(:rowGroups, :headRows)
+        head = declared.is_a?(Integer) ? rows.first(declared) : rows.take_while { |row| header_row?(row) }
+        head.each do |row|
+          Array(row[:cells]).each_with_index do |cell, col|
             next if cell[:span]
 
             (columns[col] ||= {})[:align] = cell[:align] if cell[:align]
           end
         end
         columns
+      end
+
+      # A `^` / `<` marker is not a header cell, but leaves its row in the head.
+      def header_row?(row)
+        content = Array(row[:cells]).reject { |cell| cell[:span] }
+        !content.empty? && content.all? { |cell| cell[:header] }
       end
 
       # Resolve Carve's explicit span markers (a `<` cell = merge left, a `^`
