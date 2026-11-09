@@ -14,8 +14,9 @@ Carve source is parsed with [`Carve.parse`](https://github.com/markup-carve/carv
 - **Block** nodes map to HexaPDF boxes: headings and paragraphs to text boxes,
   lists to list boxes (ordered / unordered / task), tables to table boxes,
   block quotes / divs / admonitions to styled containers, and images to image
-  boxes. Table cells keep their horizontal alignment, from the cell or from its
-  column's header; vertical alignment is not drawn.
+  boxes. Table cells keep their horizontal alignment (`|={>}` right, `|={~}`
+  center, `|={<}` left), from the cell or from its column's header; vertical
+  alignment is not drawn.
 
 ## Install
 
