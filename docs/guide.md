@@ -116,6 +116,20 @@ rather than being dropped: `Carve.parse` accepts neither.
 | `styles` | `nil` | Hierarchical style overrides (see below) |
 | `renderers` | `nil` | Callables that turn math / diagram source into image bytes (see below) |
 
+### Characters the font cannot draw
+
+The default fonts are the standard PDF Type1 fonts, which cover Western
+European text only. The renderer never draws a character its font cannot
+encode:
+
+- A smart-typography glyph falls back to what the author wrote: `x <= 10`
+  prints `x <= 10` in Times, `x ≤ 10` in a font that has the glyph.
+- Any other character (CJK text, a literal `≤`) is drawn as `?`, with one
+  warning per font and character on stderr.
+
+For full Unicode output, pass a TrueType file as `base_font:` (and
+`code_font:`), or add fonts to HexaPDF's `font.fallback` option.
+
 ## Styling
 
 Pass `styles:` to restyle renderer output without patching the renderer. Keys are
