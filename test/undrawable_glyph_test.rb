@@ -66,6 +66,13 @@ class UndrawableGlyphTest < Minitest::Test
     assert_equal "x <= 1 and ?? <= ?", text
   end
 
+  # Only HexaPDF's own layout controls are exempt from the check.
+  def test_a_space_without_a_glyph_is_replaced_and_a_tab_is_kept
+    text = nil
+    capture_io { text = render("a\u2003b\u200Dc\n\n```\na\tb\n```\n") }
+    assert_match(/\Aa\?b\?ca +b\z/, text)
+  end
+
   def test_a_font_that_has_the_glyph_draws_it
     skip "HexaPDF ships no Inter font" unless File.file?(INTER)
 

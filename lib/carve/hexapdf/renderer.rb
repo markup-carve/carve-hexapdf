@@ -826,8 +826,6 @@ module Carve
       end
 
       REPLACEMENT = "?"
-      # Characters the layout engine handles itself instead of drawing a glyph.
-      LAYOUT_CHARS = /[[:space:][:cntrl:]\u00AD\u200B-\u200D\u2060\uFEFF]/
 
       def font_wrapper(font)
         return font if font.respond_to?(:decode_codepoint)
@@ -843,24 +841,25 @@ module Carve
       end
 
       # Mirrors HexaPDF: decode, let `font.on_invalid_glyph` (and so any
-      # configured `font.fallback`) supply a missing glyph, then encode.
+      # configured `font.fallback`) supply a missing glyph, then encode. Tabs,
+      # line breaks and the like are layout controls, never drawn.
       def drawable?(wrapper, char)
-        return true if char.match?(LAYOUT_CHARS)
+        key = [wrapper, char]
+        return @drawable[key] if @drawable.key?(key)
 
-        @drawable.fetch([wrapper, char]) do
-          @drawable[[wrapper, char]] =
-            begin
-              glyphs = [wrapper.decode_codepoint(char.ord)]
-              if glyphs.first.is_a?(::HexaPDF::Font::InvalidGlyph)
-                glyphs = @c.document.config["font.on_invalid_glyph"].call(char.ord, glyphs.first)
-              end
-              glyphs.all? do |g|
-                !g.is_a?(::HexaPDF::Font::InvalidGlyph) && g.font_wrapper.encode(g)
-              end
-            rescue ::HexaPDF::Error
-              false
-            end
+        @drawable[key] = encodable?(wrapper, char)
+      end
+
+      def encodable?(wrapper, char)
+        glyphs = [wrapper.decode_codepoint(char.ord)]
+        if glyphs.first.is_a?(::HexaPDF::Font::InvalidGlyph)
+          return true if glyphs.first.control_char?
+
+          glyphs = @c.document.config["font.on_invalid_glyph"].call(char.ord, glyphs.first)
         end
+        glyphs.all? { |g| !g.is_a?(::HexaPDF::Font::InvalidGlyph) && g.font_wrapper.encode(g) }
+      rescue ::HexaPDF::Error
+        false
       end
 
       def warn_missing_glyph(wrapper, char)
