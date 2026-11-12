@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-12
+
+The default fonts no longer crash the render: `x <= 10` and CJK text now produce a PDF.
+
+### Fixes
+
+- Text the font cannot draw no longer aborts the render. With the default Type1 fonts, `<=`, `>=` and `!=` print as written instead of `≤ ≥ ≠`, and other characters without a glyph print as `?` with a warning; a TrueType `base_font:` draws them (#70, #71).
+
+**Full Changelog**: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.6...v0.1.7
+
 ## [0.1.6] - 2026-11-12
 
 Definition lists and table cell alignment now reach the PDF, the gem loads on Ruby 3.4, and the engine moves to carve-lang 0.1.14.
