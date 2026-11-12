@@ -61,6 +61,8 @@ module Carve
                                            highlight_color: highlight_color,
                                            styles: styles))
         @renderers = renderers || {}
+        @drawable = {}
+        @warned = {}
       end
 
       def render_document(doc)
@@ -186,7 +188,7 @@ module Carve
         content = resolve_nbsp(node[:content]).chomp
         style = style_for("code.block", inherited_font: true, with_box: true)
         box = style.delete(:box)
-        target.text(content, **style, box_style: box)
+        target.text(drawable_text(content, style[:font] || code_font), **style, box_style: box)
       end
 
       def list(node, target)
@@ -386,7 +388,8 @@ module Carve
         else
           alt = resolve_nbsp(node[:alt])
           alt = "[image: #{node[:src]}]" if alt.empty?
-          target.formatted_text([{ text: alt, font: [base_font, { variant: :italic }] }],
+          font = [base_font, { variant: :italic }]
+          target.formatted_text([{ text: drawable_text(alt, font), font: font }],
                                 margin: [0, 0, BLOCK_GAP])
         end
       end
@@ -399,7 +402,8 @@ module Carve
         style = style_for("math", with_box: true)
         box = style.delete(:box)
         style[:font] ||= code_font
-        target.text(node[:content].to_s, **style, text_align: :center, box_style: box)
+        target.text(drawable_text(node[:content].to_s, style[:font]), **style,
+                    text_align: :center, box_style: box)
       end
 
       def thematic_break(target)
@@ -649,7 +653,8 @@ module Carve
             Array(pair[:annotation]).each { |part| emit_inline(part, ctx, out) }
             out << run(")", ctx)
           end
-        when "smart_punctuation" then out << run(smart_punctuation_text(node), ctx)
+        when "smart_punctuation"
+          out << run(smart_punctuation_text(node), ctx, fallback: node[:value])
         # A character the author escaped. The backslash is authoring syntax, so
         # the page shows the character - but the node has no children, so
         # without this arm it falls through to the branch that emits children
@@ -767,7 +772,9 @@ module Carve
         text.to_s.gsub(RESOLVED_NBSP, NBSP)
       end
 
-      def run(text, ctx)
+      # +fallback+ is the author's spelling of the same text, drawn instead when
+      # the run font cannot draw +text+ (a smart-typography glyph).
+      def run(text, ctx, fallback: nil)
         item = { text: resolve_nbsp(text) }
         if ctx[:code]
           # :box is a block-level pseudo-property (e.g. inherited from a user
@@ -793,7 +800,75 @@ module Carve
           item[:link] = ctx[:link]
           item.merge!(run_style("link"))
         end
+        font = item[:font] || ctx[:font_family] || base_font
+        item[:text] = drawable_text(item[:text], font, fallback: fallback)
         item
+      end
+
+      # A character the font cannot encode raises inside HexaPDF and loses the
+      # whole document (carve-hexapdf#70). That is either a missing glyph (CJK
+      # in Times) or a glyph the font's encoding cannot reach (standard Type1
+      # Times has `lessequal`, WinAnsi has no slot for it).
+      def drawable_text(text, font, fallback: nil)
+        wrapper = font_wrapper(font)
+        return text if wrapper.nil? || text.each_char.all? { |ch| drawable?(wrapper, ch) }
+
+        if fallback && fallback.to_s.each_char.all? { |ch| drawable?(wrapper, ch) }
+          return fallback.to_s
+        end
+
+        text.each_char.map do |ch|
+          next ch if drawable?(wrapper, ch)
+
+          warn_missing_glyph(wrapper, ch)
+          drawable?(wrapper, REPLACEMENT) ? REPLACEMENT : ""
+        end.join
+      end
+
+      REPLACEMENT = "?"
+
+      def font_wrapper(font)
+        return font if font.respond_to?(:decode_codepoint)
+
+        name, opts = font.is_a?(Array) ? font : [font, {}]
+        return name if name.respond_to?(:decode_codepoint)
+
+        document = @c.document
+        name ||= document.config["font.default"]
+        document.fonts.add(name, variant: (opts || {})[:variant] || :none)
+      rescue StandardError
+        nil
+      end
+
+      # Mirrors HexaPDF: decode, let `font.on_invalid_glyph` (and so any
+      # configured `font.fallback`) supply a missing glyph, then encode. Tabs,
+      # line breaks and the like are layout controls, never drawn.
+      def drawable?(wrapper, char)
+        key = [wrapper, char]
+        return @drawable[key] if @drawable.key?(key)
+
+        @drawable[key] = encodable?(wrapper, char)
+      end
+
+      def encodable?(wrapper, char)
+        glyphs = [wrapper.decode_codepoint(char.ord)]
+        if glyphs.first.is_a?(::HexaPDF::Font::InvalidGlyph)
+          return true if glyphs.first.control_char?
+
+          glyphs = @c.document.config["font.on_invalid_glyph"].call(char.ord, glyphs.first)
+        end
+        glyphs.all? { |g| !g.is_a?(::HexaPDF::Font::InvalidGlyph) && g.font_wrapper.encode(g) }
+      rescue ::HexaPDF::Error
+        false
+      end
+
+      def warn_missing_glyph(wrapper, char)
+        return if @warned[[wrapper, char]]
+
+        @warned[[wrapper, char]] = true
+        name = wrapper.wrapped_font.full_name rescue wrapper.to_s
+        warn format("carve-hexapdf: font '%s' has no glyph for U+%04X %p; drawing %p instead",
+                    name, char.ord, char, REPLACEMENT)
       end
 
       # Link/highlight styles are decoration overlays on a run that may already
