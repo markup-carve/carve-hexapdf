@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-12
+
+Definition lists and table cell alignment now reach the PDF, the gem loads on Ruby 3.4, and the engine moves to carve-lang 0.1.14.
+
+### Fixes
+
+- Definition list terms and descriptions are drawn; they were dropped from the page on every engine (#66).
+- `require "carve/hexapdf"` works on Ruby 3.4, where `base64` is no longer a default gem (#64).
+
+### Improvements
+
+- Table cells keep their horizontal alignment, from the cell or its column's header (#67).
+- Developed and tested against carve-lang 0.1.14. Its braced alignment spelling (`|={>}`) right-aligns the column; a first-line `---` now opens frontmatter that runs to the end of an unclosed document, so nothing below it is drawn (#68).
+
+**Full Changelog**: https://github.com/markup-carve/carve-hexapdf/compare/v0.1.5...v0.1.6
+
 ## [0.1.5] - 2026-10-24
 
 Ruby interchange text now appears in rendered PDFs, and tables with span markers render without a PDF layout error.
