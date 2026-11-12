@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.6] - 2026-11-11
+## [0.1.6] - 2026-11-12
 
 Definition lists and table cell alignment now reach the PDF, the gem loads on Ruby 3.4, and the engine moves to carve-lang 0.1.14.
 
