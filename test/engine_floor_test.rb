@@ -80,15 +80,15 @@ class EngineFloorTest < Minitest::Test
     ref = find_node(tree, "footnote_ref")
     refute_nil ref, "the resolved carve-lang (#{Carve::VERSION}) publishes no footnote_ref node"
 
-    key = ref[:label] || ref[:id]
+    key = ref[:key]
     refute_nil key,
-               "footnote_ref carries neither :label nor :id (keys: #{ref.keys.inspect}), so " \
+               "footnote_ref carries no :key (keys: #{ref.keys.inspect}), so " \
                "register_footnote cannot match it to a definition and the note body is dropped " \
                "from the page while the marker still numbers itself"
 
     definition = find_node(tree, "footnote")
     refute_nil definition, "no footnote definition node to match the reference against"
-    assert_equal key, definition[:label] || definition[:id],
+    assert_equal key, definition[:key],
                  "the reference and the definition name the footnote differently, so no " \
                  "definition resolves"
   end

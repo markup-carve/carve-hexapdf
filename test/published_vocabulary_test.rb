@@ -74,6 +74,14 @@ class PublishedVocabularyTest < Minitest::Test
     "list_item" => "walked by the list arm, which needs the item's position in the list",
     "table_row" => "walked by the table arm, which lays the grid out row by row",
     "table_cell" => "walked by the table arm, together with colspan and rowspan",
+    "table_head" => "a row group the table arm walks; the head group decides the header row",
+    "table_body" => "a row group the table arm walks",
+    "table_foot" => "a row group the table arm walks",
+    "table_column" => "column metadata the table arm reads for alignment",
+    "cell_paragraph" => "a cell's inline content, flattened by the table arm",
+    "caption" => "drawn by the captioned block or table that carries it",
+    "ruby_pair" => "walked by the ruby arm",
+    "line" => "walked by the line_block fallback",
   }.freeze
 
   def handled_types

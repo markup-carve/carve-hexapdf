@@ -78,6 +78,9 @@ module Carve
       # ---- block dispatch ------------------------------------------------
 
       def block(node, target)
+        # 0.2 has no figure node: a caption belongs to the block it describes.
+        return captioned(node, target) if node[:caption] && !%w[table figure_group].include?(node[:type])
+
         case node[:type]
         # A definition is RELOCATED, not rendered in place - it belongs in the
         # endnote section, which is what the HTML renderer does with it too.
@@ -93,13 +96,14 @@ module Carve
         when "block_quote"      then block_quote(node, target)
         when "table"            then table(node, target)
         when "thematic_break"   then thematic_break(target)
-        when "div"              then container_of(node[:children], target)
+        when "div"              then div(node, target)
         when "admonition"       then admonition(node, target)
         when "definition_list"  then definition_list(node, target)
-        when "figure"           then figure(node, target)
         when "figure_group"     then figure_group(node, target)
+        when "section"          then Array(node[:children]).each { |ch| block(ch, target) }
+        when "include"          then include_node(node, target)
         when "block_image", "image" then image_block(node, target)
-        when "block_extension"  then container_of(node[:children], target)
+        when "block_extension"  then container_of(extension_content(node), target)
         when "raw_block", "comment", "abbreviation_def"
           # No meaningful PDF form - drop.
         else
@@ -162,8 +166,12 @@ module Carve
       end
 
       def paragraph(node, target)
-        # A paragraph that is only a display-math node becomes a centered image.
         children = Array(node[:children])
+        # An image paragraph (C2-A `role: "image"`) draws its images as blocks.
+        if node[:role] == "image" && children.all? { |ch| ch[:type] == "image" }
+          return children.each { |image| image_block(image, target) }
+        end
+        # A paragraph that is only a display-math node becomes a centered image.
         if children.size == 1 && children.first[:type] == "math" && children.first[:display]
           return display_math(children.first, target)
         end
@@ -180,12 +188,12 @@ module Carve
       end
 
       def code_block(node, target)
-        lang = node[:lang].to_s.downcase
-        if (key = DIAGRAM_LANGS[lang]) && (bytes = call_renderer(key, node[:content].to_s))
+        lang = node[:syntax].to_s.downcase
+        if (key = DIAGRAM_LANGS[lang]) && (bytes = call_renderer(key, node[:value].to_s))
           return image_bytes(bytes, target)
         end
 
-        content = resolve_nbsp(node[:content]).chomp
+        content = resolve_nbsp(node[:value]).chomp
         style = style_for("code.block", inherited_font: true, with_box: true)
         box = style.delete(:box)
         target.text(drawable_text(content, style[:font] || code_font), **style, box_style: box)
@@ -196,15 +204,16 @@ module Carve
         # paragraph chain, and Composer#list rejects text keywords (:font,
         # :font_size, ...) that the chain inherits from base - whitelist.
         style = style_for("list").slice(:item_spacing, :content_indentation)
-        items = Array(node[:items])
-        ordered = node[:ordered]
-        task = items.any? { |it| !it[:checked].nil? }
-        start = node[:start] || 1
+        items = Array(node[:children])
+        marker_info = node[:marker] || {}
+        ordered = marker_info[:kind] == "ordered"
+        task = items.any? { |it| it[:task] }
+        start = marker_info[:start] || 1
         marker = if task
                    # Standard PDF fonts have no checkbox glyphs; draw an ASCII
                    # checkbox in the marker column so item text (and nested
                    # lists) align like any other list.
-                   checked = items.map { |it| it[:checked] }
+                   checked = items.map { |it| it[:task] && it[:task][:mark].to_s.strip != "" }
                    font = style_for("paragraph", inherited_font: true)[:font] || "Times"
                    ->(doc, list_box, index) do
                      # A list split across pages continues in a box whose
@@ -232,9 +241,17 @@ module Carve
       def block_quote(node, target)
         target.container(style: style_for("quote", with_box: true)[:box]) do |cont|
           Array(node[:children]).each { |ch| block(ch, cont) }
-          if node[:attribution]
-            emit_paragraph(node[:attribution], cont, margin: [2, 0, 0])
-          end
+        end
+      end
+
+      # A div's quoted title (C2-B-120) is drawn before its body.
+      def div(node, target)
+        title = Array(node[:title])
+        return container_of(node[:children], target) if title.empty?
+
+        target.container(style: { margin: [0, 0, BLOCK_GAP] }) do |cont|
+          cont.formatted_text(inline_runs(title, bold: true), margin: [0, 0, 2])
+          Array(node[:children]).each { |ch| block(ch, cont) }
         end
       end
 
@@ -259,9 +276,9 @@ module Carve
       def definition_list(node, target)
         style = style_for("definition_list", with_box: true)
         target.container(style: style[:box]) do |cont|
-          # `items` is a flat run of definition_term / definition_description
+          # `children` is a flat run of definition_term / definition_description
           # nodes, not term/definition pairs.
-          Array(node[:items]).each do |item|
+          Array(node[:children]).each do |item|
             case item[:type]
             when "definition_term"
               cont.formatted_text(inline_runs(item[:children], bold: true), margin: [2, 0, 1])
@@ -274,13 +291,41 @@ module Carve
         end
       end
 
-      def figure(node, target)
-        block(node[:target], target) if node[:target]
-        if node[:caption] && !node[:caption].empty?
-          style = text_style("figure.caption")
-          target.formatted_text(inline_runs(node[:caption], italic: true, font_family: style[:font]),
-                                **style)
+      # A captioned block: the block as it stands, then its caption.
+      def captioned(node, target)
+        block(node.reject { |key, _| key == :caption }, target)
+        caption = caption_inlines(node[:caption])
+        return if caption.empty?
+
+        style = text_style("figure.caption")
+        target.formatted_text(inline_runs(caption, italic: true, font_family: style[:font]), **style)
+      end
+
+      # A caption node holds blocks; a caption line is drawn from their inlines.
+      def caption_inlines(caption)
+        return [] unless caption.is_a?(Hash)
+
+        Array(caption[:children]).each_with_index.flat_map do |blk, index|
+          lead = index.positive? ? [{ type: "text", value: " " }] : []
+          lead + (blk[:type] == "paragraph" ? Array(blk[:children]) : [])
         end
+      end
+
+      # An expanded include stands for its blocks; an unexpanded one is the
+      # directive as text, as the HTML writer renders it (C2-N-070).
+      def include_node(node, target)
+        if node[:children]
+          Array(node[:children]).each { |ch| block(ch, target) }
+        else
+          emit_paragraph([{ type: "text", value: "{{ #{node[:path]} }}" }], target)
+        end
+      end
+
+      # An extension this renderer does not implement prints the fallback it
+      # promised (C2-X-023), or its children when it has none.
+      def extension_content(node)
+        children = Array(node[:children])
+        children.empty? ? Array(node[:fallback]) : children
       end
 
       # A composite figure (PART 9 section 4c) is ONE float. Its panels, the
@@ -289,8 +334,9 @@ module Carve
       # be stranded from the panels it numbers, nor a panel from its own
       # caption.
       #
-      # PANELS ARE THE `figure` AND `table` CHILDREN, in source order; every
-      # other child is plain group content and is drawn IN PLACE between them.
+      # PANELS ARE THE CAPTIONED CHILDREN (an image paragraph, a table), in
+      # source order; every other child is plain group content and is drawn IN
+      # PLACE between them.
       # Nothing here re-attaches or drops it.
       #
       # THE GROUP CAPTION IS ALREADY NUMBERED when it arrives: the number is a
@@ -301,9 +347,10 @@ module Carve
         style = style_for("figure.group", with_box: true)
         panels = ::HexaPDF::Document::Layout::ChildrenCollector.collect(@layout) do |cont|
           Array(node[:children]).each do |child|
-            case child[:type]
-            when "figure", "table" then panel(child, cont)
-            else block(child, cont)
+            if child[:type] == "table" || child[:caption]
+              panel(child, cont)
+            else
+              block(child, cont)
             end
           end
         end
@@ -313,7 +360,8 @@ module Carve
                else
                  panels
                end
-        body += [group_caption_box(node[:caption])] if node[:caption] && !node[:caption].empty?
+        caption = caption_inlines(node[:caption])
+        body += [group_caption_box(caption)] unless caption.empty?
         emit_box(keep_together(body, style: style[:box]), target)
       end
 
@@ -323,7 +371,7 @@ module Carve
       # the panel wrapper adds nothing to it.
       def panel(node, target)
         children = ::HexaPDF::Document::Layout::ChildrenCollector.collect(@layout) do |cont|
-          node[:type] == "table" ? table(node, cont) : figure(node, cont)
+          node[:type] == "table" ? table(node, cont) : captioned(node, cont)
         end
         emit_box(keep_together(children), target)
       end
@@ -395,14 +443,14 @@ module Carve
       end
 
       def display_math(node, target)
-        if (bytes = call_renderer(:math, node[:content].to_s, true))
+        if (bytes = call_renderer(:math, node[:value].to_s, true))
           return image_bytes(bytes, target, align: :center)
         end
 
         style = style_for("math", with_box: true)
         box = style.delete(:box)
         style[:font] ||= code_font
-        target.text(drawable_text(node[:content].to_s, style[:font]), **style,
+        target.text(drawable_text(node[:value].to_s, style[:font]), **style,
                     text_align: :center, box_style: box)
       end
 
@@ -430,13 +478,28 @@ module Carve
 
       # ---- tables (with row/col spans) -----------------------------------
 
+      # The rows of a table and the number in its head group (C2-A table).
+      def table_rows(node)
+        rows = []
+        head = 0
+        Array(node[:children]).each do |group|
+          Array(group[:children]).each do |row|
+            next unless row[:type] == "table_row"
+
+            rows << row
+            head += 1 if group[:type] == "table_head"
+          end
+        end
+        [rows, head]
+      end
+
       def table(node, target)
-        resolved = resolve_spans(Array(node[:rows]))
+        rows, head_rows = table_rows(node)
+        resolved = resolve_spans(rows)
         return if resolved.empty?
 
-        # HexaPDF cannot repeat a header whose cell spans into the body.
-        header_count = resolved.first.any? { |o| o[:header] } &&
-                       resolved.first.none? { |o| o[:row_span] > 1 } ? 1 : 0
+        # HexaPDF repeats one header row, and not one whose cell spans into the body.
+        header_count = head_rows.positive? && resolved.first.none? { |o| o[:row_span] > 1 } ? 1 : 0
         table_style = style_for("table")
         header_style = style_for("table.header")
         columns = column_alignments(node)
@@ -444,7 +507,7 @@ module Carve
         cell_boxes = resolved.map do |row|
           row.map do |o|
             cell_style = o[:header] ? table_style.merge(header_style) : table_style
-            runs = inline_runs(o[:cell][:children], bold: o[:header],
+            runs = inline_runs(cell_inlines(o[:cell]), bold: o[:header],
                                font_family: cell_style[:font])
             runs = [{ text: "" }] if runs.empty?
             # :margin belongs to the table box, :cell_padding is our pseudo-prop.
@@ -466,10 +529,19 @@ module Carve
         body = [[{ content: @layout.text_box("") }]] if body.nil? || body.empty?
 
         target.table(body, header: header, margin: table_style[:margin])
-        if node[:caption] && !node[:caption].empty?
-          style = text_style("table.caption")
-          target.formatted_text(inline_runs(node[:caption], italic: true, font_family: style[:font]),
-                                **style)
+        caption = caption_inlines(node[:caption])
+        return if caption.empty?
+
+        style = text_style("table.caption")
+        target.formatted_text(inline_runs(caption, italic: true, font_family: style[:font]), **style)
+      end
+
+      # A cell holds cell paragraphs (or blocks); a table cell draws one run of
+      # their inlines.
+      def cell_inlines(cell)
+        Array(cell[:children]).each_with_index.flat_map do |blk, index|
+          lead = index.positive? ? [{ type: "text", value: " " }] : []
+          lead + (%w[cell_paragraph paragraph].include?(blk[:type]) ? Array(blk[:children]) : [blk])
         end
       end
 
@@ -477,28 +549,20 @@ module Carve
 
       # A cell without its own alignment inherits its column's: the table's
       # `columns` metadata, overridden by the head rows (the HTML `thead`), a
-      # later row winning. Any other cell's alignment is local. The head is
-      # `rowGroups.headRows` when published, else the leading header rows.
+      # later row winning. Any other cell's alignment is local. The head is the
+      # table's head group.
       # Vertical alignment is not drawn: `text_valign` overflows a table cell.
       def column_alignments(node)
-        columns = Array(node[:columns]).map { |c| (c || {}).slice(:align) }
-        rows = Array(node[:rows])
-        declared = node.dig(:rowGroups, :headRows)
-        head = declared.is_a?(Integer) ? rows.first(declared) : rows.take_while { |row| header_row?(row) }
-        head.each do |row|
-          Array(row[:cells]).each_with_index do |cell, col|
+        columns = Array(node[:columns]).map { |c| { align: (c || {})[:align] || (c || {})[:resolvedAlign] }.compact }
+        rows, head_rows = table_rows(node)
+        rows.first(head_rows).each do |row|
+          Array(row[:children]).each_with_index do |cell, col|
             next if cell[:span]
 
             (columns[col] ||= {})[:align] = cell[:align] if cell[:align]
           end
         end
         columns
-      end
-
-      # A `^` / `<` marker is not a header cell, but leaves its row in the head.
-      def header_row?(row)
-        content = Array(row[:cells]).reject { |cell| cell[:span] }
-        !content.empty? && content.all? { |cell| cell[:header] }
       end
 
       # Resolve Carve's explicit span markers (a `<` cell = merge left, a `^`
@@ -513,7 +577,7 @@ module Carve
           emitted = []
           last = nil
           bumped = {} # originators already row-extended in THIS row (by object id)
-          Array(row[:cells]).each_with_index do |cell, col|
+          Array(row[:children]).each_with_index do |cell, col|
             case cell[:span]
             when "colspan"
               owner = last || col_owner[col - 1]
@@ -566,8 +630,6 @@ module Carve
         case node[:type]
         when "text"       then out << run(node[:value].to_s, ctx)
         when "soft_break" then out << run(" ", ctx)
-        # A `+` continuation row join; the spec renders it as one space.
-        when "cell_wrap"  then out << run(" ", ctx)
         when "hard_break" then out << { text: "\n" }
         # Each emphasis sort is its OWN node type. They used to be one
         # `emphasis` node carrying a `kind`, so a profile could not deny bold
@@ -599,53 +661,39 @@ module Carve
         # dropped. There is no wrapper in a PDF text run, so what is left is the
         # content, unstyled: carve-js renders `A !`raw span` B` as `A raw span B`
         # in plain text.
-        when "literal_inline" then out << run(node[:content].to_s, ctx)
+        when "literal_inline" then out << run(node[:value].to_s, ctx)
         # The number in "Figure 1:". Without this the caption renders without it.
         when "caption_number" then out << run(node[:n].to_s, ctx)
         # `:name[content]` - the content is an inline array, and the extension's
         # own presentation has no PDF form, so emit what it wraps. carve-js
         # renders `:kbd[Ctrl]` as `Ctrl` in plain text.
         when "inline_extension" then inline_extension(node, ctx, out)
-        when "mention"  then out << run("@#{node[:user]}", ctx)
+        when "mention"  then out << run("@#{node[:target]}", ctx)
         when "tag"      then out << run("##{node[:name]}", ctx)
         # `footnote_ref` is `[^label]` and `inline_footnote` is `^[body]`.
         # Both used to publish as `footnote`, which is the BLOCK definition's
         # type - one identifier for three constructs, so nothing could tell them
         # apart (carve-rb#19). The old name is still accepted: a tree stored by
         # an older version can still be rendered.
-        when "footnote_ref", "inline_footnote", "footnote"
+        when "footnote_ref", "inline_footnote"
           number = register_footnote(node)
           out << run("[#{number}]", ctx.merge(super: true)) if number
         when "citation_group" then out << run(node[:raw].to_s, ctx)
-        when "abbreviation"   then out << run(node[:abbr].to_s, ctx)
-        # `heading_ref` is what `</#id>` publishes; `cross_ref` was its name
-        # before the rename and is still accepted, like the footnote arm above.
-        # Reading only `cross_ref` dropped every cross-reference from the page
-        # with no marker left behind: `See </#Plan>.` drew "See .".
-        #
-        # A resolved reference carries `href` and a `target` that is the target
-        # heading's TEXT, so it draws as a link over that text. An unresolved
-        # one carries no `href` and a `target` that is the selector as authored,
-        # which the HTML target renders as literal source - so it is drawn back
-        # in its source spelling rather than as a bare word that reads like
-        # prose.
-        when "heading_ref", "cross_ref"
-          if node[:href].to_s.empty?
-            out << run("</##{node[:target]}>", ctx)
+        when "abbreviation"   then out << run(node[:key].to_s, ctx)
+        # A cross-reference (`</#id>`). A resolved one carries `href` and draws
+        # as a link over its key; an unresolved one has no `href` and is drawn
+        # in its source spelling, as the HTML writer renders it.
+        when "xref"
+          if node[:namespace] == "footnote"
+            number = register_footnote(node)
+            out << run("[#{number}]", ctx.merge(super: true)) if number
+          elsif node[:href].to_s.empty?
+            out << run("</##{node[:key]}>", ctx)
           else
-            out << run(node[:target].to_s, ctx.merge(link: node[:href].to_s))
+            out << run(node[:key].to_s, ctx.merge(link: node[:href].to_s))
           end
-        when "caption_number" then (out << run(node[:number].to_s, ctx) if node[:number])
         when "insert" then emit_children(node, ctx.merge(underline: true), out)
         when "delete" then emit_children(node, ctx.merge(strike: true), out)
-        # Both halves are inline arrays, and both reach the page: struck for the
-        # replaced run, underlined for the replacement, which is what the
-        # reference ANSI and HTML renderers show.
-        # carve-lang 0.1.3 and older publish the halves as `oldText`/`newText`
-        # strings; the gemspec floor still admits those engines.
-        when "substitution"
-          emit_half(node[:old], node[:oldText], ctx.merge(strike: true), out)
-          emit_half(node[:new], node[:newText], ctx.merge(underline: true), out)
         when "ruby"
           Array(node[:pairs]).each do |pair|
             Array(pair[:base]).each { |part| emit_inline(part, ctx, out) }
@@ -654,12 +702,7 @@ module Carve
             out << run(")", ctx)
           end
         when "smart_punctuation"
-          out << run(smart_punctuation_text(node), ctx, fallback: node[:value])
-        # A character the author escaped. The backslash is authoring syntax, so
-        # the page shows the character - but the node has no children, so
-        # without this arm it falls through to the branch that emits children
-        # and renders nothing at all (carve#350, carve#355).
-        when "escaped_text" then out << run(node[:value].to_s, ctx)
+          out << run(smart_punctuation_text(node), ctx, fallback: node[:source])
         when "raw_inline", "critic_comment"
           # No safe PDF form - drop.
         else
@@ -703,19 +746,11 @@ module Carve
         glyph = node[:glyph]
         return glyph.to_s unless glyph.nil? || glyph.to_s.empty?
 
-        SMART_PUNCTUATION_GLYPHS.fetch(node[:kind].to_s) { node[:value].to_s }
+        SMART_PUNCTUATION_GLYPHS.fetch(node[:kind].to_s) { node[:source].to_s }
       end
 
       def emit_children(node, ctx, out)
         Array(node[:children]).each { |c| emit_inline(c, ctx, out) }
-      end
-
-      def emit_half(inlines, text, ctx, out)
-        if inlines.nil? && text
-          out << run(text.to_s, ctx)
-        else
-          emit_children({ children: inlines }, ctx, out)
-        end
       end
 
       # Styling for one emphasis node.
@@ -744,15 +779,9 @@ module Carve
 
       # Build one formatted-text run hash for +text+ under styling +ctx+.
       # `:name[content]` - the extension's own presentation has no PDF form, so
-      # emit what it wraps. `content` is an inline ARRAY in a parsed tree; a
-      # hand-built one may hold a bare string, and `render_ast` is public, so
-      # take both rather than raising on the second.
+      # emit what it wraps, or the fallback it promised when it wraps nothing.
       def inline_extension(node, ctx, out)
-        content = node[:content]
-        case content
-        when Array then emit_children({ children: content }, ctx, out)
-        when String then out << run(content, ctx)
-        end
+        emit_children({ children: extension_content(node) }, ctx, out)
       end
 
       # U+E000 STANDS FOR a no-break space the parser resolved - from an escaped
@@ -904,8 +933,8 @@ module Carve
       def walk_footnote_defs(node, defs)
         return unless node.is_a?(Hash)
 
-        if node[:type] == "footnote" && node[:label]
-          defs[node[:label].to_s] ||= Array(node[:children])
+        if node[:type] == "footnote" && node[:key]
+          defs[node[:key].to_s] ||= Array(node[:children])
         end
 
         node.each_value do |value|
@@ -920,17 +949,12 @@ module Carve
       # when there is nothing to number (unresolvable reference). Repeated
       # references to the same definition share one number and one endnote.
       def register_footnote(node)
-        if node[:inline]
-          @footnotes << { number: @footnotes.size + 1, inline: node[:inline] }
+        if node[:type] == "inline_footnote"
+          @footnotes << { number: @footnotes.size + 1, inline: Array(node[:children]) }
           return @footnotes.last[:number]
         end
 
-        # `label` since carve-rb 0.1.4; `id` is the pre-rename spelling and is
-        # still accepted, the same way the node-type arms above accept both
-        # vocabularies. Reading only `id` silently dropped the body: the marker
-        # still numbered itself from `node[:number]`, so the page kept `[2]`
-        # and lost "2. Referenced note body." entirely.
-        id = node[:label] || node[:id]
+        id = node[:key]&.to_s
         if id && @footnote_defs.key?(id)
           return @footnote_numbers[id] ||= begin
             @footnotes << { number: @footnotes.size + 1, blocks: @footnote_defs[id] }
@@ -979,16 +1003,16 @@ module Carve
       end
 
       def inline_math(node, ctx, out)
-        if (img = call_renderer(:math, node[:content].to_s, !!node[:display]))
+        if (img = call_renderer(:math, node[:value].to_s, !!node[:display]))
           spec = { box: [:image, StringIO.new(img[:bytes])],
                    height: img[:height] || 11, valign: :baseline }
           spec[:width] = img[:width] if img[:width]
           out << spec
         else
-          out << run(node[:content].to_s, ctx.merge(code: true))
+          out << run(node[:value].to_s, ctx.merge(code: true))
         end
       rescue StandardError
-        out << run(node[:content].to_s, ctx.merge(code: true))
+        out << run(node[:value].to_s, ctx.merge(code: true))
       end
 
       def inline_image(node, ctx, out)

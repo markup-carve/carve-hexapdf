@@ -4,11 +4,9 @@ source "https://rubygems.org"
 
 gemspec
 
-# The engine is the RELEASED carve-lang gem at an exact version, so a
-# development run measures a version a consumer can install. It used to be a
-# carve-rb git revision; released versions replaced that once carve-rb shipped
-# precompiled gems on every platform CI runs. carve-lang 0.1.12 also carries
-# the `substitution` halves the renderer reads (#39).
+# On the Carve 0.2 line the engine is carve-rb `next2` at a pinned commit,
+# built from git (Rust and libclang needed), because no 0.2 carve-lang is
+# released yet. On `main` it is the released gem at an exact version.
 #
 # The pin and the gemspec floor are different claims: the floor is the oldest
 # engine this gem works with, the pin is the engine the suite measures. They
@@ -29,5 +27,5 @@ if carve_rb && !carve_rb.empty?
 
   gem "carve-lang", path: File.expand_path(carve_rb)
 else
-  gem "carve-lang", "0.1.14"
+  gem "carve-lang", git: "https://github.com/markup-carve/carve-rb", ref: "5fa8f1dd346e400ed6c2472692bccfeb62802179"
 end
