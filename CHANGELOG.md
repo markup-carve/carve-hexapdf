@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- Ported to Carve 0.2: the renderer reads the 0.2 tree (AST contract 2.0) from carve-rb `next2`, pinned by commit. Captions are caption nodes on the block they describe (0.2 has no figure node), and divs draw their quoted title.
+- Include warnings carry the engine's `code` (`include-not-found`, `include-outside-root`, `include-cycle`), and `on_includes:` dependencies carry `path`, `from`, `read` and `file` instead of `resolved` and `denial`.
+- `profile:` no longer changes the parse (a 0.2 profile restricts the HTML render), and a non-empty `extensions:` raises `Carve::ExtensionUnavailable` until the 0.2 extension host lands.
+
 ## [0.1.7] - 2026-11-12
 
 The default fonts no longer crash the render: `x <= 10` and CJK text now produce a PDF.

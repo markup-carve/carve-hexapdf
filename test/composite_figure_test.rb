@@ -31,11 +31,17 @@ class CompositeFigureTest < Minitest::Test
   # wrapper builds from `![alt](src)` plus a `^ ` line. The src does not exist,
   # so the image degrades to its alt text - visible in the content stream,
   # which is what these assertions read.
+  # Carve 0.2 has no figure node: a panel is an image paragraph that carries
+  # its caption node.
+  def caption_node(value)
+    { type: "caption", children: [{ type: "paragraph", children: [text(value)] }] }
+  end
+
   def panel(alt, caption, id: nil)
     node = {
-      type: "figure",
-      target: { type: "image", src: "/no-such-#{alt}.png", alt: alt },
-      caption: [text(caption)],
+      type: "paragraph", role: "image",
+      children: [{ type: "image", src: "/no-such-#{alt}.png", alt: alt }],
+      caption: caption_node(caption),
     }
     node[:attrs] = { id: id } if id
     node
@@ -43,7 +49,7 @@ class CompositeFigureTest < Minitest::Test
 
   def group(*children, caption: nil, classes: nil)
     node = { type: "figure_group", children: children }
-    node[:caption] = [text(caption)] if caption
+    node[:caption] = caption_node(caption) if caption
     node[:attrs] = { classes: classes } if classes
     node
   end
@@ -105,10 +111,11 @@ class CompositeFigureTest < Minitest::Test
   def test_a_table_panel_renders_with_its_own_caption
     table = {
       type: "table",
-      caption: [text("Table caption")],
-      rows: [
-        { cells: [{ header: true, children: [text("H")] }] },
-        { cells: [{ children: [text("cell")] }] },
+      caption: caption_node("Table caption"),
+      columns: [{ type: "table_column" }],
+      children: [
+        { type: "table_head", children: [{ type: "table_row", children: [{ type: "table_cell", header: true, children: [text("H")] }] }] },
+        { type: "table_body", children: [{ type: "table_row", children: [{ type: "table_cell", header: false, children: [text("cell")] }] }] },
       ],
     }
     out = strings(Carve::Hexapdf.render_ast(doc(group(table, caption: "Figure 1: With a table"))))
@@ -145,7 +152,7 @@ class CompositeFigureTest < Minitest::Test
     per_page = strings_per_page(bytes)
     assert_operator per_page.length, :>=, 2, "the group was expected to need more than one page"
     seen = per_page.flatten.select { |s| s.start_with?("(") && s.include?(") Panel ") }
-    assert_equal panels.map { |p| p[:caption][0][:value] }, seen
+    assert_equal panels.map { |p| p[:caption][:children][0][:children][0][:value] }, seen
     assert_includes per_page.flatten, "Figure 1: Too tall"
   end
 
@@ -195,7 +202,8 @@ class CompositeFigureTest < Minitest::Test
   # its TITLE before the body, a group draws its CAPTION after the panels.
   def test_a_titled_figure_container_is_not_a_group
     out = strings(Carve::Hexapdf.render_ast(doc(
-      { type: "admonition", kind: "figure", title: [text("A titled figure div")],
+      # C2-B-127: a titled `::: figure` is a plain div with the class `figure`.
+      { type: "div", attrs: { classes: ["figure"] }, title: [text("A titled figure div")],
         children: [panel("one", "(a) One")] }
     )))
     order = ["A titled figure div", "(a) One"]

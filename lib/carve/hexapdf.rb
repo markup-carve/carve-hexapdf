@@ -134,9 +134,11 @@ module Carve
           return
         end
 
+        # A 0.2 diagnostic names its cause in `code` (C2-N-013) and the
+        # included file it points into in `file`, never a host path.
         Array(result[:warnings]).each do |warning|
           where = warning[:file] ? "#{warning[:file]}: " : ""
-          $stderr.puts "carve-hexapdf: #{where}#{warning[:rule]}: #{warning[:message]}"
+          $stderr.puts "carve-hexapdf: #{where}#{warning[:code]}: #{warning[:message]}"
         end
         suppressed = result[:suppressedWarnings].to_i
         return unless suppressed.positive?

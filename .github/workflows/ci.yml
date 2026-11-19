@@ -20,8 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # No Rust toolchain or libclang: the pinned carve-lang ships a precompiled
-      # gem for this platform on every Ruby in the matrix.
+      # The Carve 0.2 engine is carve-rb next2 built from git: the runner's Rust
+      # toolchain compiles it, and rb-sys needs libclang for its bindings.
+      - name: Install libclang
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libclang-dev
+
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}

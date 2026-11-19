@@ -31,6 +31,8 @@ class TableAlignmentTest < Minitest::Test
     x_of(Carve::Hexapdf.render(source))
   end
 
+  # The sources use braced alignment marks; the glued 0.1 spelling is text in
+  # Carve 0.2 (U-056).
   def test_unaligned_cells_stay_left
     x = render("|= Long header text |\n| 5 |\n")
 
@@ -39,8 +41,8 @@ class TableAlignmentTest < Minitest::Test
 
   def test_header_alignment_applies_to_its_column
     left = render("|= Long header text |\n| 5 |\n")
-    right = render("|=> Long header text |\n| 5 |\n")
-    center = render("|=~ Long header text |\n| 5 |\n")
+    right = render("|={>} Long header text |\n| 5 |\n")
+    center = render("|={~} Long header text |\n| 5 |\n")
 
     assert_operator right["5"], :>, center["5"]
     assert_operator center["5"], :>, left["5"]
@@ -48,45 +50,46 @@ class TableAlignmentTest < Minitest::Test
   end
 
   def test_body_cell_alignment_stays_local
-    x = render("|= Long header text |\n|> 5 |\n| 6 |\n")
+    x = render("|= Long header text |\n|{>} 5 |\n| 6 |\n")
 
     assert_operator x["5"], :>, x["6"]
     assert_in_delta x["Long header text"], x["6"], 1
   end
 
   def test_only_leading_header_rows_set_the_column
-    x = render("| 1 |\n|=> Long header text |\n| 6 |\n")
+    x = render("| 1 |\n|={>} Long header text |\n| 6 |\n")
 
     assert_in_delta x["1"], x["6"], 1
   end
 
   def test_span_marker_keeps_its_row_in_the_header
-    x = render("|= A |= Long header text |\n| ^ |=> C |\n| 1 | 2 |\n")
+    x = render("|= A |= Long header text |\n| ^ |={>} C |\n| 1 | 2 |\n")
 
     assert_operator x["2"], :>, x["Long header text"]
   end
 
-  def test_declared_head_rows_decide_the_head
-    none = render("{header-rows=0}\n|=> Long header text |\n| 1 |\n")
-    two = render("{header-rows=2}\n|=> Long header text |\n| b |\n| 1 |\n")
+  # C2-B-179, C2-B-209: `header-rows` counts the head of a delimited table; a
+  # pipe table's head is its leading header rows whatever the attribute says.
+  def test_header_rows_does_not_change_a_pipe_table_head
+    plain = render("|={>} Long header text |\n| 1 |\n")
+    none = render("{header-rows=0}\n|={>} Long header text |\n| 1 |\n")
 
-    assert_operator none["Long header text"], :>, none["1"]
-    assert_operator two["1"], :>, two["Long header text"]
-    assert_operator two["b"], :>, two["Long header text"]
+    assert_in_delta plain["1"], none["1"], 1
+    assert_operator none["1"], :>, render("|= Long header text |\n| 1 |\n")["1"]
   end
 
   def test_columns_metadata_aligns_cells_without_their_own
-    cell = ->(text, **extra) { { type: "table_cell", header: false, children: [{ type: "text", value: text }], **extra } }
+    cell = ->(text, **extra) { { type: "table_cell", header: false, children: [{ type: "cell_paragraph", children: [{ type: "text", value: text }] }], **extra } }
     ast = {
       type: "doc",
       children: [{
         type: "table",
-        columns: [{ align: "right" }],
-        rows: [
-          { type: "table_row", cells: [cell.("Long body text")] },
-          { type: "table_row", cells: [cell.("5")] },
-          { type: "table_row", cells: [cell.("6", align: "left")] },
-        ],
+        columns: [{ type: "table_column", align: "right" }],
+        children: [{ type: "table_body", children: [
+          { type: "table_row", children: [cell.("Long body text")] },
+          { type: "table_row", children: [cell.("5")] },
+          { type: "table_row", children: [cell.("6", align: "left")] },
+        ] }],
       }],
     }
     x = x_of(Carve::Hexapdf.render_ast(ast))

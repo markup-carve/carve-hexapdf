@@ -1,6 +1,6 @@
 # carve-hexapdf
 
-Ruby PDF renderer for Carve documents. It supports `carve-lang` 0.1.1 or later and uses the HexaPDF composition engine. See the [Carve documentation](https://markup-carve.github.io/carve/).
+Ruby PDF renderer for Carve 0.2 documents. It reads the 0.2 tree from `carve-lang` (carve-rb `next2`, pinned by commit until a 0.2 gem is released) and uses the HexaPDF composition engine. See the [Carve documentation](https://markup-carve.github.io/carve/).
 
 ## Install
 
