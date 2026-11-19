@@ -25,6 +25,9 @@ module Carve
   # (MIT) only bridges to it; your use of HexaPDF is governed by HexaPDF's own
   # terms.
   module Hexapdf
+    # Raised when the installed engine does not produce the Carve 0.2 tree.
+    class EngineError < StandardError; end
+
     class << self
       # Render Carve +source+ to a PDF and return the document as a binary
       # String.
@@ -109,7 +112,7 @@ module Carve
                   "pass include_root: and source_path:, or drop them"
           end
 
-          return ::Carve.parse(source)
+          return require_tree_v2(::Carve.parse(source))
         end
 
         result = ::Carve.parse_with_includes(source, root: include_root,
@@ -117,7 +120,19 @@ module Carve
                                                      extensions: extensions,
                                                      profile: profile)
         report_includes(result, on_includes)
-        result[:value]
+        require_tree_v2(result[:value])
+      end
+
+      # The renderer reads the 0.2 tree. carve-rb next2 still carries the gem
+      # version of the last 0.1 release, so the gemspec range cannot tell the
+      # two engines apart; the tree's own contract version can.
+      def require_tree_v2(tree)
+        version = tree.is_a?(Hash) ? tree[:astVersion].to_s : ""
+        return tree if version.start_with?("2.")
+
+        raise ::Carve::Hexapdf::EngineError,
+              "carve-hexapdf needs the Carve 0.2 engine (AST contract 2.x); the installed " \
+              "carve-lang #{::Carve::VERSION} produced #{version.empty? ? 'a 0.1 tree' : "contract #{version}"}"
       end
 
       # Hand the caller everything expansion found, or say what degraded.

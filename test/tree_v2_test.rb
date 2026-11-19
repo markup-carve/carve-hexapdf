@@ -32,4 +32,12 @@ class TreeV2Test < Minitest::Test
     out = strings("{#plan}\n= Plan\n\nSee </#plan>.\n")
     assert_includes out, "plan"
   end
+
+  def test_a_0_1_tree_from_the_engine_is_refused_with_a_clear_error
+    error = assert_raises(Carve::Hexapdf::EngineError) do
+      Carve::Hexapdf.send(:require_tree_v2, { type: "document", children: [] })
+    end
+    assert_match(/Carve 0.2 engine/, error.message)
+    assert_equal "2.0", Carve::Hexapdf.send(:require_tree_v2, Carve.parse("x"))[:astVersion]
+  end
 end
