@@ -32,7 +32,7 @@ bundle install
 `carve-hexapdf` depends on `carve-lang` (a native gem that builds the Carve
 engine via Rust) and on `hexapdf`. It reads the Carve 0.2 tree (AST contract
 2.0). No 0.2 `carve-lang` is released yet, so the `Gemfile` builds carve-rb
-`next2` from git, which needs a Rust toolchain and libclang.
+`next2` from git, which needs Rust 1.88 or newer and libclang.
 
 ## Usage
 
