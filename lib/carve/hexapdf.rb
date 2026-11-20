@@ -2,6 +2,7 @@
 
 require "hexapdf"
 require "carve"
+require "json"
 
 require_relative "hexapdf/version"
 require_relative "hexapdf/style_map"
@@ -120,7 +121,24 @@ module Carve
                                                      extensions: extensions,
                                                      profile: profile)
         report_includes(result, on_includes)
-        require_tree_v2(result[:value])
+        tree = require_tree_v2(result[:value])
+        return tree if Array(extensions).empty?
+
+        render_view(tree, extensions)
+      end
+
+      # The view the HTML renderer would draw. Document transforms (heading
+      # numbers, autolink, the table of contents) edit that view only, never
+      # the parse tree (C2-X-053), so a host transform registered after them
+      # hands it back. The expanded tree goes in, so the drawn document is the
+      # one the include report describes.
+      def render_view(tree, extensions)
+        view = nil
+        capture = ->(document) { view = document }
+        ::Carve.render_with_host(tree: tree,
+                                 options: { extensions: Array(extensions).map(&:to_s) },
+                                 transforms: [capture])
+        require_tree_v2(JSON.parse(JSON.generate(view), symbolize_names: true))
       end
 
       # The renderer reads the 0.2 tree. carve-rb next2 still carries the gem

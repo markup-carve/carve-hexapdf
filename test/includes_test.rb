@@ -226,6 +226,33 @@ class IncludesTest < Minitest::Test
     assert_drawn bytes, ["Page"]
   end
 
+  # Document transforms edit the render view, not the parse tree (C2-X-053);
+  # 0.1 drew them, and so does this renderer.
+  def test_autolink_reaches_the_pdf_as_a_link_annotation
+    write("doc/sub/frag.crv", "See https://example.com for more.\n")
+    page = write("doc/index.crv", "{{ sub/frag.crv }}\n")
+    assert_equal 0, link_count(Carve::Hexapdf.render_from_file(page))
+    assert_equal 1, link_count(Carve::Hexapdf.render_from_file(page, extensions: ["carve.autolink"]))
+  end
+
+  def test_heading_numbers_are_drawn
+    page = write("doc/index.crv", "# Intro\n\n## Part\n")
+    refute_drawn Carve::Hexapdf.render_from_file(page), ["1.1"]
+    assert_drawn Carve::Hexapdf.render_from_file(page, extensions: ["carve.headingNumbers"]), ["1.1"]
+  end
+
+  def test_the_table_of_contents_is_drawn
+    page = write("doc/index.crv", "# Intro\n\n## Particular\n")
+    plain = text_of(Carve::Hexapdf.render_from_file(page)).scan("Particular").size
+    with_toc = text_of(Carve::Hexapdf.render_from_file(page, extensions: ["carve.toc"])).scan("Particular").size
+    assert_equal plain + 1, with_toc
+  end
+
+  def link_count(bytes)
+    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
+    doc.pages.sum { |page| Array(page[:Annots]).count { |a| a[:Subtype] == :Link } }
+  end
+
   def test_parse_options_without_a_root_are_refused_rather_than_dropped
     error = assert_raises(ArgumentError) do
       Carve::Hexapdf.render("# x\n", extensions: ["math_block"])
