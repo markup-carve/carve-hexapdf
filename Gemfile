@@ -27,5 +27,5 @@ if carve_rb && !carve_rb.empty?
 
   gem "carve-lang", path: File.expand_path(carve_rb)
 else
-  gem "carve-lang", git: "https://github.com/markup-carve/carve-rb", ref: "983705d8f153c9b29b10ab0d2577ce2e6b7cef43"
+  gem "carve-lang", git: "https://github.com/markup-carve/carve-rb", ref: "80c455fa72b384913f60e2071d3b36550b05d6ff"
 end
