@@ -56,41 +56,29 @@ class InlineVocabularyTest < Minitest::Test
   REACHES_THE_PAGE = {
     "symbol" => [{ type: "symbol", name: "smile" }, ":smile:"],
     "emoji (the old name)" => [{ type: "emoji", name: "smile" }, ":smile:"],
-    "literal_inline" => [{ type: "literal_inline", content: "raw span" }, "raw span"],
+    "literal_inline" => [{ type: "literal_inline", value: "raw span" }, "raw span"],
     "caption_number" => [{ type: "caption_number", n: 1 }, "1"],
     "inline_extension" => [
-      { type: "inline_extension", name: "kbd", content: [{ type: "text", value: "Ctrl" }] },
+      { type: "inline_extension", name: "kbd", children: [{ type: "text", value: "Ctrl" }] },
       "Ctrl",
     ],
-    # Both halves are inline arrays (spec AST schema), and both reach the page.
+    # A substitution is a delete followed by an insert in 0.2 (T-043); both
+    # halves reach the page.
     "substitution" => [
       {
-        type: "substitution",
-        old: [{ type: "text", value: "was" }],
-        new: [{ type: "emphasis", children: [{ type: "text", value: "is" }] }],
+        type: "span",
+        children: [
+          { type: "delete", children: [{ type: "text", value: "was" }] },
+          { type: "insert", children: [{ type: "emphasis", children: [{ type: "text", value: "is" }] }] },
+        ],
       },
       "wasis",
     ],
-    # An empty half is `[]` rather than a missing key, so the other half still
-    # has to reach the page on its own.
-    "substitution (empty old)" => [
-      { type: "substitution", old: [], new: [{ type: "text", value: "added" }] },
-      "added",
-    ],
-    # carve-lang 0.1.3 and older publish string halves, and the floor admits them.
-    "substitution (pre-0.1.4 string halves)" => [
-      { type: "substitution", oldText: "was", newText: "is" },
-      "wasis",
-    ],
-    # A resolved cross-reference draws the target heading's text, which is what
-    # `target` carries; an unresolved one has no `href` and carries the selector
-    # as authored, so it is drawn back in its source spelling the way the HTML
-    # target renders it as literal text. Reading only the pre-rename
-    # `cross_ref` name dropped both: `See </#Plan>.` drew "See .".
-    "heading_ref" => [{ type: "heading_ref", target: "h", href: "#h" }, "h"],
-    "heading_ref (unresolved)" => [{ type: "heading_ref", target: "h" }, "</#h>"],
-    "cross_ref (the old name)" => [{ type: "cross_ref", target: "h", href: "#h" }, "h"],
-    "cell_wrap" => [{ type: "cell_wrap", line: 1 }, "< >"],
+    # A resolved cross-reference (`xref`, C2-A) draws its key as a link; an
+    # unresolved one has no `href` and is drawn back in its source spelling,
+    # the way the HTML writer renders it as literal text.
+    "xref" => [{ type: "xref", key: "h", namespace: "heading", href: "#h" }, "h"],
+    "xref (unresolved)" => [{ type: "xref", key: "h", namespace: "heading" }, "</#h>"],
     "code (control)" => [{ type: "code", value: "x" }, "x"],
     "insert (control)" => [{ type: "insert", children: [{ type: "text", value: "ins" }] }, "ins"],
   }.freeze
@@ -98,8 +86,8 @@ class InlineVocabularyTest < Minitest::Test
   # Dropped ON PURPOSE, with the reason. A PDF has no form for raw markup, and a
   # critic comment is editorial rather than content.
   DELIBERATELY_DROPPED = {
-    "raw_inline" => { type: "raw_inline", format: "html", content: "<b>x</b>" },
-    "critic_comment" => { type: "critic_comment", content: "note" },
+    "raw_inline" => { type: "raw_inline", format: "html", value: "<b>x</b>" },
+    "critic_comment" => { type: "critic_comment", value: "note" },
   }.freeze
 
   # Dropped, and SHOULD NOT BE - each needs a decision rather than an arm, so
@@ -149,9 +137,11 @@ class InlineVocabularyTest < Minitest::Test
     "insert" => { type: "insert", children: [{ type: "text", value: "ins" }] },
     "delete" => { type: "delete", children: [{ type: "text", value: "del" }] },
     "substitution" => {
-      type: "substitution",
-      old: [{ type: "text", value: "was" }],
-      new: [{ type: "text", value: "is" }],
+      type: "span",
+      children: [
+        { type: "delete", children: [{ type: "text", value: "was" }] },
+        { type: "insert", children: [{ type: "text", value: "is" }] },
+      ],
     },
   }.freeze
 

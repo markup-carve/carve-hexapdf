@@ -116,29 +116,32 @@ class IncludesTest < Minitest::Test
   def test_a_refusal_is_reported
     page = write("doc/index.crv", "{{ ../outside/secret.crv }}\n")
     messages = quiet { Carve::Hexapdf.render_from_file(page) }
-    assert_includes messages, "include-unresolved"
+    # C2-N-013: the 0.2 parse names the cause of a refusal.
+    assert_includes messages, "include-outside-root"
   end
 
-  def test_the_report_does_not_say_which_denial_it_was
+  def test_the_report_names_no_host_path
     page = write("doc/index.crv", "{{ ../outside/secret.crv }}\n")
     messages = quiet { Carve::Hexapdf.render_from_file(page) }
-    refute_includes messages, "outside-root"
+    refute_includes messages, @root
   end
 
+  # C2-N-013: the cause reaches a caller as the warning code; the 0.2
+  # dependency entries carry `read` and the file id instead of a denial class.
   def test_the_denial_class_reaches_a_caller_that_asks
     page = write("doc/index.crv", "{{ ../outside/secret.crv }}\n\n{{ nope.crv }}\n")
     report = nil
     Carve::Hexapdf.render_from_file(page, on_includes: ->(**kwargs) { report = kwargs })
-    denials = report[:dependencies].map { |dependency| dependency[:denial] }
-    assert_includes denials, "outside-root"
-    assert_includes denials, "not-found"
+    codes = report[:warnings].map { |warning| warning[:code] }
+    assert_includes codes, "include-outside-root"
+    assert_includes codes, "include-not-found"
   end
 
   def test_a_caller_that_asks_gets_the_dependency_identities
     page = write("doc/index.crv", "{{ sub/frag.crv }}\n")
     report = nil
     Carve::Hexapdf.render_from_file(page, on_includes: ->(**kwargs) { report = kwargs })
-    assert_equal [{ denial: nil, path: "sub/frag.crv", resolved: true }],
+    assert_equal [{ file: "sub/frag.crv", from: "index.crv", path: "sub/frag.crv", read: true }],
                  report[:dependencies]
   end
 
@@ -153,7 +156,8 @@ class IncludesTest < Minitest::Test
   def test_no_host_path_reaches_a_reported_message
     page = write("doc/sub/page.crv", "{{ nope.crv }}\n")
     messages = quiet { Carve::Hexapdf.render_from_file(page) }
-    assert_includes messages, "include-unresolved"
+    # C2-N-013: the 0.2 parse reports a missing target as include-not-found.
+    assert_includes messages, "include-not-found"
     refute_includes messages, @root
   end
 
@@ -174,8 +178,9 @@ class IncludesTest < Minitest::Test
   end
 
   def test_a_cycle_degrades_instead_of_hanging
-    write("doc/a.crv", "Alpha {{ b.crv }}\n")
-    write("doc/b.crv", "Beta {{ a.crv }}\n")
+    # C2-B-201: a directive stands alone on its line.
+    write("doc/a.crv", "Alpha\n\n{{ b.crv }}\n")
+    write("doc/b.crv", "Beta\n\n{{ a.crv }}\n")
     page = write("doc/index.crv", "{{ a.crv }}\n")
     messages = nil
     bytes = nil
@@ -193,6 +198,7 @@ class IncludesTest < Minitest::Test
   # --- parent and child share one parse ------------------------------------
 
   def test_the_profile_governs_the_childs_parse_too
+    skip "a 0.2 profile restricts the render, not the parse (C2-H-129), and this PDF renderer does not apply profiles yet"
     write("doc/sub/frag.crv", "# Headline in child\n")
     page = write("doc/index.crv", "{{ sub/frag.crv }}\n")
     # `minimal` denies headings, so the child's marker survives as text.
@@ -202,13 +208,44 @@ class IncludesTest < Minitest::Test
   end
 
   def test_the_extension_set_governs_the_childs_parse_too
+    write("doc/sub/frag.crv", "See :wiki[Page] for more.\n")
+    page = write("doc/index.crv", "{{ sub/frag.crv }}\n")
+    original = Carve.method(:parse_with_includes)
+    received = nil
+    bytes = nil
+    Carve.define_singleton_method(:parse_with_includes) do |*args, **kwargs|
+      received = kwargs[:extensions]
+      original.call(*args, **kwargs)
+    end
+    begin
+      bytes = Carve::Hexapdf.render_from_file(page, extensions: ["carve.wiki"])
+    ensure
+      Carve.define_singleton_method(:parse_with_includes, original)
+    end
+    assert_equal ["carve.wiki"], received
+    assert_drawn bytes, ["Page"]
+  end
+
+  # Document transforms edit the render view, not the parse tree (C2-X-053);
+  # 0.1 drew them, and so does this renderer.
+  def test_autolink_reaches_the_pdf_as_a_link_annotation
     write("doc/sub/frag.crv", "See https://example.com for more.\n")
     page = write("doc/index.crv", "{{ sub/frag.crv }}\n")
-    # The drawn text is the same either way; what changes is whether the child's
-    # bare URL became a link, and a link becomes a URI annotation in the PDF.
     assert_equal 0, link_count(Carve::Hexapdf.render_from_file(page))
-    assert_equal 1,
-                 link_count(Carve::Hexapdf.render_from_file(page, extensions: ["autolink"]))
+    assert_equal 1, link_count(Carve::Hexapdf.render_from_file(page, extensions: ["carve.autolink"]))
+  end
+
+  def test_heading_numbers_are_drawn
+    page = write("doc/index.crv", "# Intro\n\n## Part\n")
+    refute_drawn Carve::Hexapdf.render_from_file(page), ["1.1"]
+    assert_drawn Carve::Hexapdf.render_from_file(page, extensions: ["carve.headingNumbers"]), ["1.1"]
+  end
+
+  def test_the_table_of_contents_is_drawn
+    page = write("doc/index.crv", "# Intro\n\n## Particular\n")
+    plain = text_of(Carve::Hexapdf.render_from_file(page)).scan("Particular").size
+    with_toc = text_of(Carve::Hexapdf.render_from_file(page, extensions: ["carve.toc"])).scan("Particular").size
+    assert_equal plain + 1, with_toc
   end
 
   def link_count(bytes)

@@ -135,15 +135,13 @@ class CarveHexapdfTest < Minitest::Test
   # node carries no children, so a missing arm does not degrade - it renders
   # nothing at all, and an assertion that only checked the surrounding words
   # would pass with the character gone.
+  # 0.2 has no escaped_text node: the escaped character is part of the text,
+  # so this renders the escape from source.
   def test_escaped_text_renders_the_character_it_escaped
     ["-", '"', "*", "."].each do |ch|
-      actual = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
-        { type: "text", value: "a", pos: smart_pos },
-        { type: "escaped_text", value: ch, pos: smart_pos },
-        { type: "text", value: "b", pos: smart_pos }
-      ])))
+      actual = pdf_content(Carve::Hexapdf.render("a\\#{ch}b\n"))
       control = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
-        { type: "text", value: "a#{ch}b", pos: smart_pos }
+        { type: "text", value: "a#{ch}b" }
       ])))
       assert_equal control, actual, "escaped #{ch.inspect} did not render as the character"
     end
@@ -154,7 +152,7 @@ class CarveHexapdfTest < Minitest::Test
   # missing character is not.
   def test_smart_punctuation_unknown_kind_falls_back_to_source
     actual = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
-      { type: "smart_punctuation", kind: "kind_from_a_later_spec", value: "?!", pos: smart_pos }
+      { type: "smart_punctuation", kind: "kind_from_a_later_spec", source: "?!", pos: smart_pos }
     ])))
     control = pdf_content(Carve::Hexapdf.render_ast(paragraph_doc([
       { type: "text", value: "?!", pos: smart_pos }
@@ -251,7 +249,7 @@ class CarveHexapdfTest < Minitest::Test
                                  children: [{ type: "text", value: "Old body." }] }] },
       children: [{ type: "paragraph",
                    children: [{ type: "text", value: "Ref" },
-                              { type: "footnote_ref", id: "a" }] }],
+                              { type: "footnote_ref", key: "a", namespace: "footnote" }] }],
     }
     doc = HexaPDF::Document.new(io: StringIO.new(Carve::Hexapdf.render_ast(ast)))
     strings = doc.pages.map(&:contents).join.scan(/\((.*?)\)/).flatten
@@ -299,10 +297,11 @@ class CarveHexapdfTest < Minitest::Test
       type: "document",
       children: [{
         type: "table",
-        caption: [{ type: "text", value: "Table 1: Measurements" }],
-        rows: [
-          { cells: [{ header: true, children: [{ type: "text", value: "H" }] }] },
-          { cells: [{ children: [{ type: "text", value: "cell" }] }] },
+        caption: { type: "caption", children: [{ type: "paragraph", children: [{ type: "text", value: "Table 1: Measurements" }] }] },
+        columns: [{ type: "table_column" }],
+        children: [
+          { type: "table_head", children: [{ type: "table_row", children: [{ type: "table_cell", header: true, children: [{ type: "text", value: "H" }] }] }] },
+          { type: "table_body", children: [{ type: "table_row", children: [{ type: "table_cell", header: false, children: [{ type: "text", value: "cell" }] }] }] },
         ],
       }],
     }
@@ -314,8 +313,8 @@ class CarveHexapdfTest < Minitest::Test
   def test_span_counts
     # Row 1 is [^, d, <]: the `^` in column 0 extends "a" downward, and the `<`
     # in column 2 extends "d" rightward.
-    rows = Carve.parse("| a | b | c |\n| ^ | d | < |\n")[:children].first[:rows]
     r = Carve::Hexapdf::Renderer.allocate
+    rows = r.send(:table_rows, Carve.parse("| a | b | c |\n| ^ | d | < |\n")[:children].first).first
     resolved = r.send(:resolve_spans, rows)
     # Row 0: a,b,c all 1x1, but "a" gains a row_span from the `^` beneath it.
     assert_equal [1, 1, 1], resolved[0].map { |o| o[:col_span] }
@@ -595,15 +594,16 @@ class CarveHexapdfTest < Minitest::Test
   end
 
   def test_combined_col_and_row_span_not_overcounted
-    # Row 0 "A" spans both columns (A + `<`); row 1 has a `^` under each covered
-    # column. The downward extension must count once -> row_span 2, not 3.
-    rows = Carve.parse("| A | < |\n| ^ | ^ |\n")[:children].first[:rows]
+    # Row 0 "A" spans both columns (A + `<`). C2-B-172: a `^` below a cell that
+    # spans more than one column joins nothing in 0.2, so row 1 holds two text
+    # cells and "A" keeps a row span of one.
     r = Carve::Hexapdf::Renderer.allocate
+    rows = r.send(:table_rows, Carve.parse("| A | < |\n| ^ | ^ |\n")[:children].first).first
     resolved = r.send(:resolve_spans, rows)
     a = resolved[0][0]
     assert_equal 2, a[:col_span]
-    assert_equal 2, a[:row_span]
-    assert_empty resolved[1] # both cells in row 1 are markers
+    assert_equal 1, a[:row_span]
+    assert_equal 2, resolved[1].size
   end
 
   def test_math_renderer_callable_used
