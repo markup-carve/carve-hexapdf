@@ -32,7 +32,7 @@ bundle install
 `carve-hexapdf` depends on `carve-lang` (a native gem that builds the Carve
 engine via Rust) and on `hexapdf`. It reads the Carve 0.2 tree (AST contract
 2.0). No 0.2 `carve-lang` is released yet, so the `Gemfile` builds carve-rb
-`next2` from git, which needs a Rust toolchain and libclang.
+`next2` from git, which needs Rust 1.88 or newer and libclang.
 
 ## Usage
 
@@ -110,8 +110,10 @@ and a dependency carries `path`, `from`, `read` and, when it was read, the
 `extensions:` and `profile:` reach the engine on the include path; without a
 root they raise rather than being dropped. In Carve 0.2 a profile restricts the
 render, not the parse (C2-H-129), and this PDF renderer does not apply
-profiles yet. The 0.2 extension host is pending in carve-rb, so a non-empty
-`extensions:` raises `Carve::ExtensionUnavailable` (markup-carve/carve-rs#4329).
+profiles yet. `extensions:` takes Carve 0.2 standard extension names
+(`carve.wiki`, `carve.details`, ...) and governs the parse of every included
+file too. An extension node this renderer has no drawing for prints its children
+or its fallback.
 
 ### Options
 
