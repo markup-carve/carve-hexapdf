@@ -208,19 +208,22 @@ class IncludesTest < Minitest::Test
   end
 
   def test_the_extension_set_governs_the_childs_parse_too
-    skip "the 0.2 extension host is pending in carve-rb next2 (Carve::ExtensionUnavailable, markup-carve/carve-rs#4329)"
-    write("doc/sub/frag.crv", "See https://example.com for more.\n")
+    write("doc/sub/frag.crv", "See :wiki[Page] for more.\n")
     page = write("doc/index.crv", "{{ sub/frag.crv }}\n")
-    # The drawn text is the same either way; what changes is whether the child's
-    # bare URL became a link, and a link becomes a URI annotation in the PDF.
-    assert_equal 0, link_count(Carve::Hexapdf.render_from_file(page))
-    assert_equal 1,
-                 link_count(Carve::Hexapdf.render_from_file(page, extensions: ["autolink"]))
-  end
-
-  def link_count(bytes)
-    doc = HexaPDF::Document.new(io: StringIO.new(bytes))
-    doc.pages.sum { |page| Array(page[:Annots]).count { |a| a[:Subtype] == :Link } }
+    original = Carve.method(:parse_with_includes)
+    received = nil
+    bytes = nil
+    Carve.define_singleton_method(:parse_with_includes) do |*args, **kwargs|
+      received = kwargs[:extensions]
+      original.call(*args, **kwargs)
+    end
+    begin
+      bytes = Carve::Hexapdf.render_from_file(page, extensions: ["carve.wiki"])
+    ensure
+      Carve.define_singleton_method(:parse_with_includes, original)
+    end
+    assert_equal ["carve.wiki"], received
+    assert_drawn bytes, ["Page"]
   end
 
   def test_parse_options_without_a_root_are_refused_rather_than_dropped
