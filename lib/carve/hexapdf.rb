@@ -141,7 +141,7 @@ module Carve
         require_tree_v2(JSON.parse(JSON.generate(view), symbolize_names: true))
       end
 
-      # The renderer reads the 0.2 tree. carve-rb next2 still carries the gem
+      # The renderer reads the 0.2 tree. carve-rb's 0.2 line still carries the gem
       # version of the last 0.1 release, so the gemspec range cannot tell the
       # two engines apart; the tree's own contract version can.
       def require_tree_v2(tree)

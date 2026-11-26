@@ -9,8 +9,8 @@ bundle exec rake test
 
 ### Which engine you are testing against
 
-On the Carve 0.2 line (`next2`) no 0.2 `carve-lang` is released, so `Gemfile`
-pins carve-rb `next2` by commit and bundler builds it from git (Rust and
+On the Carve 0.2 line (`main`) no 0.2 `carve-lang` is released, so `Gemfile`
+pins carve-rb by commit and bundler builds it from git (Rust and
 libclang needed):
 
 ```sh

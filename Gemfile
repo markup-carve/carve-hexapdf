@@ -4,9 +4,9 @@ source "https://rubygems.org"
 
 gemspec
 
-# On the Carve 0.2 line the engine is carve-rb `next2` at a pinned commit,
+# On the Carve 0.2 line (`main`) the engine is carve-rb at a pinned commit,
 # built from git (Rust and libclang needed), because no 0.2 carve-lang is
-# released yet. On `main` it is the released gem at an exact version.
+# released yet. On the `0.1` branch it is the released gem at an exact version.
 #
 # The pin and the gemspec floor are different claims: the floor is the oldest
 # engine this gem works with, the pin is the engine the suite measures. They
