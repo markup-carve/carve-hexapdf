@@ -1070,7 +1070,7 @@ module Carve
         text emphasis code link image span math raw_inline emoji autolink
         cross_ref caption_number mention tag citation_group inline_extension
         abbreviation footnote soft_break hard_break insert delete
-        substitution critic_comment
+        critic_comment
       ].freeze
     end
   end
