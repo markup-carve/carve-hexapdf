@@ -224,6 +224,8 @@ bodies collected into a numbered endnote section - inline `^[..]` and
 referenced `[^id]` alike), and **images** - both block and inline, embedded
 from a local file path or a `data:` URI. Task-list checkboxes are drawn in the
 list marker column, so item text and nested lists align like any other list.
+A thematic break with the class `page-break` (`{.page-break}` on the line above
+`***`) starts a new page and draws no bar; inside a container it draws nothing.
 
 ### Composite figures
 
