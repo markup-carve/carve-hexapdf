@@ -47,6 +47,13 @@ class PageBreakTest < Minitest::Test
     assert_equal 1, pages(Carve::Hexapdf.render_ast(doc(page_break, para("Only")))).size
   end
 
+  def test_a_page_break_after_a_float_still_breaks
+    image = { type: "image", src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAADElEQVR4nGNgIB0AAAA0AAF2Xq7DAAAAAElFTkSuQmCC", alt: "Floated" }
+    bytes = Carve::Hexapdf.render_ast(doc(image, page_break, para("Two")),
+                                      styles: { image: { position: :float, width: 40 } })
+    assert_equal 2, pages(bytes).size
+  end
+
   def test_a_page_break_inside_a_container_draws_nothing
     quote = { type: "block_quote", children: [para("In"), page_break, para("Out")] }
     out = pages(Carve::Hexapdf.render_ast(doc(quote)))
