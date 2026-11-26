@@ -54,6 +54,12 @@ class PageBreakTest < Minitest::Test
     assert_equal 2, pages(bytes).size
   end
 
+  def test_a_page_break_after_an_unmasked_paragraph_still_breaks
+    bytes = Carve::Hexapdf.render_ast(doc(para("One"), page_break, para("Two")),
+                                      styles: { paragraph: { mask_mode: :none } })
+    assert_equal 2, pages(bytes).size
+  end
+
   def test_a_page_break_inside_a_container_draws_nothing
     quote = { type: "block_quote", children: [para("In"), page_break, para("Out")] }
     out = pages(Carve::Hexapdf.render_ast(doc(quote)))

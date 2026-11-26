@@ -469,13 +469,10 @@ module Carve
         target.box(:base, height: height, style: style)
       end
 
-      # A float leaves +y+ at the top but cuts its area out of the frame shape,
-      # so the page is empty only while the shape is still the whole frame.
+      # Nothing drawn yet: the frame cannot tell, since a float or an unmasked
+      # box draws without moving +y+ or cutting the frame shape.
       def page_empty?(composer)
-        frame = composer.frame
-        shape = frame.shape
-        shape.is_a?(::Geom2D::Rectangle) && shape.width >= frame.width &&
-          shape.height >= frame.height
+        composer.canvas.contents.empty?
       end
 
       # Draw a rendered image ({bytes:, width:, height:} or raw bytes) as a
