@@ -95,7 +95,7 @@ module Carve
         when "list"             then list(node, target)
         when "block_quote"      then block_quote(node, target)
         when "table"            then table(node, target)
-        when "thematic_break"   then thematic_break(target)
+        when "thematic_break"   then thematic_break(node, target)
         when "div"              then div(node, target)
         when "admonition"       then admonition(node, target)
         when "definition_list"  then definition_list(node, target)
@@ -454,10 +454,24 @@ module Carve
                     text_align: :center, box_style: box)
       end
 
-      def thematic_break(target)
+      # `{.page-break}` on `***` is the page-break convention (carve#6793). Only
+      # the composer can start a page; inside a container the break draws
+      # nothing, and on a page with nothing on it yet it adds no blank page.
+      def thematic_break(node, target)
+        attrs = node[:attrs]
+        if attrs.is_a?(Hash) && Array(attrs[:classes]).map(&:to_s).include?("page-break")
+          target.new_page if target.respond_to?(:new_page) && !page_empty?(target)
+          return
+        end
+
         style = style_for("thematic_break")
         height = style.delete(:height)
         target.box(:base, height: height, style: style)
+      end
+
+      def page_empty?(composer)
+        frame = composer.frame
+        frame.y >= frame.bottom + frame.height
       end
 
       # Draw a rendered image ({bytes:, width:, height:} or raw bytes) as a
