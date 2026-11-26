@@ -30,7 +30,9 @@ bundle install
 ```
 
 `carve-hexapdf` depends on `carve-lang` (a native gem that builds the Carve
-engine via Rust) and on `hexapdf`.
+engine via Rust) and on `hexapdf`. It reads the Carve 0.2 tree (AST contract
+2.0). No 0.2 `carve-lang` is released yet, so the `Gemfile` builds carve-rb
+`next2` from git, which needs Rust 1.88 or newer and libclang.
 
 ## Usage
 
@@ -94,14 +96,29 @@ get the dependency identities with it:
 Carve::Hexapdf.render_from_file(
   "report/index.crv",
   on_includes: lambda { |warnings:, dependencies:, suppressed_warnings:|
-    dependencies.each { |d| puts "#{d[:path]} #{d[:resolved] ? 'read' : d[:denial]}" }
+    warnings.each { |w| puts "#{w[:code]}: #{w[:message]}" }
+    dependencies.each { |d| puts "#{d[:path]} #{d[:read] ? d[:file] : 'not read'}" }
   }
 )
 ```
 
-`extensions:` and `profile:` reach the engine on the include path, and a child
-file is parsed with the same ones as its parent. Without a root they raise,
-rather than being dropped: `Carve.parse` accepts neither.
+Warnings and dependencies follow the 0.2 engine schema: a warning names its
+cause in `code` (`include-not-found`, `include-outside-root`, `include-cycle`),
+and a dependency carries `path`, `from`, `read` and, when it was read, the
+`file` id below the root.
+
+`extensions:` and `profile:` reach the engine on the include path; without a
+root they raise rather than being dropped. In Carve 0.2 a profile restricts the
+render, not the parse (C2-H-129), and this PDF renderer does not apply
+profiles yet. `extensions:` takes Carve 0.2 standard extension names
+(`carve.wiki`, `carve.details`, ...) and governs the parse of every included
+file too. The navigation extensions (`carve.headingNumbers`,
+`carve.headingPermalinks`, `carve.toc`, `carve.tocPlacement`, `carve.autolink`,
+`carve.externalLinks`, `carve.headingLevelShift`, `carve.headingReference`,
+`carve.linkPolicy`) are document transforms: they edit the view the engine
+renders, not the parse tree, so with `extensions:` set the PDF is drawn from
+that view. An extension node this renderer has no drawing for prints its
+children or its fallback.
 
 ### Options
 
@@ -207,6 +224,8 @@ bodies collected into a numbered endnote section - inline `^[..]` and
 referenced `[^id]` alike), and **images** - both block and inline, embedded
 from a local file path or a `data:` URI. Task-list checkboxes are drawn in the
 list marker column, so item text and nested lists align like any other list.
+A thematic break with the class `page-break` (`{.page-break}` on the line above
+`***`) starts a new page and draws no bar; inside a container it draws nothing.
 
 ### Composite figures
 
@@ -241,11 +260,8 @@ An opener that carries a title or a label (`::: figure "T"`, `::: figure [g]`)
 is deliberately NOT this construct - it stays a generic container and renders
 as one.
 
-> [!NOTE]
-> The parser this gem consumes (`carve-lang`, over carve-rs) does not produce
-> `figure_group` nodes yet. The renderer accepts them today - through
-> `Carve.parse` once the engine ships the construct, and through
-> `Carve::Hexapdf.render_ast` with an AST from any engine that already does.
+In the 0.2 tree a panel is a captioned child: an image paragraph or a block
+that carries a `caption` node, or a table.
 
 ### Math and diagrams (renderer callables)
 

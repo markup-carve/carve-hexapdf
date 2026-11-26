@@ -9,14 +9,17 @@ bundle exec rake test
 
 ### Which engine you are testing against
 
-`Gemfile` pins `carve-lang` to one exact released version from RubyGems, so a
-development run measures a version a consumer can install rather than whatever
-the gemspec range resolves that day:
+On the Carve 0.2 line (`next2`) no 0.2 `carve-lang` is released, so `Gemfile`
+pins carve-rb `next2` by commit and bundler builds it from git (Rust and
+libclang needed):
 
 ```sh
 bundle exec ruby script/verify_engine_pin.rb
-# carve-lang 0.1.14 from https://rubygems.org/ (Gemfile pins 0.1.14)
+# carve-lang 0.1.14 from https://github.com/markup-carve/carve-rb (Gemfile pins carve-rb <sha>)
 ```
+
+The gem version that commit carries is still `0.1.14`, so the gemspec range
+admits it; the range moves when a 0.2 gem is published.
 
 CI runs that before the suite and refuses when the Gemfile, the resolved bundle
 and the loaded library disagree. To develop against a local carve-rb checkout,
