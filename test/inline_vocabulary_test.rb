@@ -172,6 +172,15 @@ class InlineVocabularyTest < Minitest::Test
                  "a substitution must rule the replaced half and the replacement separately"
   end
 
+  def test_no_substitution_node_counts_as_inline
+    # The 2.0 AST has no substitution node (C2-A-097); a replacement is a
+    # delete followed by an insert, which stay inline.
+    refute_includes Carve::Hexapdf::Renderer::INLINE_TYPES, "substitution"
+    assert_includes Carve::Hexapdf::Renderer::INLINE_TYPES, "insert"
+    assert_includes Carve::Hexapdf::Renderer::INLINE_TYPES, "delete"
+    assert_includes Carve::Hexapdf::Renderer::INLINE_TYPES, "critic_comment"
+  end
+
   def test_an_unhandled_type_with_children_still_emits_them
     # The fallback's good case, and the reason a type with `children` was never
     # part of this bug. Pinned so a future dispatch rewrite keeps it.
