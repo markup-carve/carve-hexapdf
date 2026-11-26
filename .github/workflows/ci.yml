@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The Carve 0.2 engine is carve-rb next2 built from git: the runner's Rust
+      # The Carve 0.2 engine is carve-rb built from git: the runner's Rust
       # toolchain compiles it, and rb-sys needs libclang for its bindings.
       - name: Install libclang
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libclang-dev
