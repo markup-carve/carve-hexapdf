@@ -68,14 +68,15 @@ class TableAlignmentTest < Minitest::Test
     assert_operator x["2"], :>, x["Long header text"]
   end
 
-  # C2-B-179, C2-B-209: `header-rows` counts the head of a delimited table; a
-  # pipe table's head is its leading header rows whatever the attribute says.
-  def test_header_rows_does_not_change_a_pipe_table_head
+  # C2-B-186 (carve#6663): `header-rows` sets the head of a pipe table as on a
+  # delimited table, so 0 leaves no head, and a header cell outside the head
+  # aligns only itself (C2-B-213).
+  def test_header_rows_sets_a_pipe_table_head
     plain = render("|={>} Long header text |\n| 1 |\n")
     none = render("{header-rows=0}\n|={>} Long header text |\n| 1 |\n")
 
-    assert_in_delta plain["1"], none["1"], 1
-    assert_operator none["1"], :>, render("|= Long header text |\n| 1 |\n")["1"]
+    assert_operator plain["1"], :>, none["1"]
+    assert_in_delta render("|= Long header text |\n| 1 |\n")["1"], none["1"], 1
   end
 
   def test_columns_metadata_aligns_cells_without_their_own
