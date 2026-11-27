@@ -15,11 +15,11 @@ libclang needed):
 
 ```sh
 bundle exec ruby script/verify_engine_pin.rb
-# carve-lang 0.1.14 from https://github.com/markup-carve/carve-rb (Gemfile pins carve-rb <sha>)
+# carve-lang 0.2.0 from https://github.com/markup-carve/carve-rb (Gemfile pins carve-rb <sha>)
 ```
 
-The gem version that commit carries is still `0.1.14`, so the gemspec range
-admits it; the range moves when a 0.2 gem is published.
+The gemspec range is `>= 0.2.0, < 0.3.0`, so the pinned commit has to carry
+carve-lang 0.2.0 or a later 0.2 version.
 
 CI runs that before the suite and refuses when the Gemfile, the resolved bundle
 and the loaded library disagree. To develop against a local carve-rb checkout,
@@ -31,7 +31,7 @@ CARVE_RB_PATH=../carve-rb bundle install
 ```
 
 An installed copy of this gem resolves differently, through the range
-`carve-hexapdf.gemspec` declares - today `>= 0.1.1, < 0.2.0`. The two can
+`carve-hexapdf.gemspec` declares - today `>= 0.2.0, < 0.3.0`. The two can
 differ, and the difference is not academic: this gem
 reads an AST whose node vocabulary was renamed once already inside 0.1.
 `test/engine_floor_test.rb` asks whether the engine under `bundle exec rake
